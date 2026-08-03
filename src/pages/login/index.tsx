@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [captchaTicket, setCaptchaTicket] = useState('')
   const [captchaBusy, setCaptchaBusy] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [wechatBusy, setWechatBusy] = useState(false)
 
   const loadChallenge = useCallback(async () => {
     try {
@@ -87,6 +88,27 @@ export default function LoginPage() {
     }
   }
 
+  const loginWithWechat = async () => {
+    if (wechatBusy || busy) return
+    setWechatBusy(true)
+    try {
+      const loginResult = await Taro.login()
+      if (!loginResult.code) throw new Error('未能获取微信登录凭证，请重试')
+      const result = await authApi.wechatLogin(loginResult.code)
+      authApi.saveSession(result)
+      await Taro.showToast({ title: '微信登录成功', icon: 'success' })
+      setTimeout(() => Taro.switchTab({ url: '/pages/home/index' }), 350)
+    } catch (error) {
+      await Taro.showToast({
+        title: error instanceof Error ? error.message : '微信登录失败',
+        icon: 'none',
+        duration: 2800
+      })
+    } finally {
+      setWechatBusy(false)
+    }
+  }
+
   return (
     <View className='login-page'>
       <View className='login-page__halo login-page__halo--top' />
@@ -129,6 +151,14 @@ export default function LoginPage() {
         <Button className='primary-button login-card__submit' loading={busy || captchaBusy} disabled={busy || captchaBusy} onClick={submit}>
           {captchaBusy ? '正在验证' : mode === 'login' ? '登录' : '使用邀请码注册'}
         </Button>
+        {mode === 'login' && <>
+          <View className='login-divider'><Text>或</Text></View>
+          <Button className='wechat-login-button' loading={wechatBusy} disabled={wechatBusy || busy} onClick={loginWithWechat}>
+            <Text className='wechat-login-button__mark'>微</Text>
+            <Text>{wechatBusy ? '正在识别微信' : '微信快捷登录'}</Text>
+          </Button>
+          <Text className='wechat-login-help'>首次使用请先通过邮箱登录，并在“我的”页面绑定当前微信。</Text>
+        </>}
       </View>
       <Text className='login-page__footer'>私有部署 · 内容仅对受邀成员开放</Text>
     </View>

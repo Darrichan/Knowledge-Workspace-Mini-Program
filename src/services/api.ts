@@ -2,6 +2,8 @@ import Taro from '@tarojs/taro'
 import type { AuthResponse, DocumentItem, DocumentType, User, WechatBindingStatus, Workspace } from '../types/domain'
 
 const API_BASE = (process.env.TARO_APP_API_BASE || 'http://127.0.0.1:18000/api/v1').replace(/\/$/, '')
+const API_MODE = process.env.TARO_APP_API_MODE || 'direct'
+const CLOUD_FUNCTION = process.env.TARO_APP_CLOUD_FUNCTION || 'apiGateway'
 const TOKEN_KEY = 'kw_mini_token'
 
 type ApiOptions = {
@@ -14,16 +16,9 @@ export async function request<T>(path: string, options: ApiOptions = {}): Promis
   const token = Taro.getStorageSync<string>(TOKEN_KEY)
 
   try {
-    const response = await Taro.request<T>({
-      url: `${API_BASE}${path}`,
-      method: options.method || 'GET',
-      data: options.data,
-      timeout: 12000,
-      header: {
-        'content-type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      }
-    })
+    const response = API_MODE === 'cloud'
+      ? await requestThroughCloud<T>(path, options, token)
+      : await requestDirect<T>(path, options, token)
 
     if (response.statusCode === 401) {
       Taro.removeStorageSync(TOKEN_KEY)
@@ -37,10 +32,43 @@ export async function request<T>(path: string, options: ApiOptions = {}): Promis
       throw new Error(payload?.error?.message || payload?.message || payload?.detail || '请求失败，请稍后重试')
     }
 
-    return response.data
+    return response.data as T
   } catch (error) {
     if (error instanceof Error) throw error
     throw new Error('网络连接失败，请检查本地服务')
+  }
+}
+
+async function requestDirect<T>(path: string, options: ApiOptions, token: string) {
+  return Taro.request<T>({
+    url: `${API_BASE}${path}`,
+    method: options.method || 'GET',
+    data: options.data,
+    timeout: 12000,
+    header: {
+      'content-type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    }
+  })
+}
+
+async function requestThroughCloud<T>(path: string, options: ApiOptions, token: string) {
+  const cloudResult = await Taro.cloud.callFunction({
+    name: CLOUD_FUNCTION,
+    data: {
+      path,
+      method: options.method || 'GET',
+      data: options.data || null,
+      token: token || null
+    }
+  })
+  const result = cloudResult.result as { statusCode?: number; data?: T; error?: { message?: string } } | undefined
+  if (!result || typeof result.statusCode !== 'number') {
+    throw new Error(result?.error?.message || '云函数返回异常，请稍后重试')
+  }
+  return {
+    statusCode: result.statusCode,
+    data: result.data as T
   }
 }
 
@@ -57,6 +85,10 @@ export const authApi = {
   register: (email: string, displayName: string, password: string, inviteCode: string, captchaTicket: string) => request<AuthResponse>('/auth/register', {
     method: 'POST',
     data: { email, display_name: displayName, password, invite_code: inviteCode, captcha_ticket: captchaTicket }
+  }),
+  wechatLogin: (code: string) => request<AuthResponse>('/auth/wechat/mini/login', {
+    method: 'POST',
+    data: { code }
   }),
   me: () => request<User>('/auth/me'),
   wechatBinding: () => request<WechatBindingStatus>('/auth/wechat/binding'),
@@ -116,4 +148,4 @@ export function contentToText(content?: Record<string, any>) {
   return lines.join('\n')
 }
 
-export const apiConfig = { baseUrl: API_BASE }
+export const apiConfig = { baseUrl: API_BASE, mode: API_MODE, cloudFunction: CLOUD_FUNCTION }

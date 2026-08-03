@@ -45,3 +45,34 @@
   &__track { position: relative; }
   &__target { position: absolute; z-index: 2; top: 20px; width: 4px; height: 18px; border-radius: 4px; background: #89a5df; transform: translateX(-50%); pointer-events: none; }
 }
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin: 25px 0 20px;
+  color: #a1adbd;
+  font-size: 20px;
+
+  &::before,
+  &::after { content: ''; flex: 1; height: 1px; background: #e6ebf2; }
+}
+
+.wechat-login-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 82px;
+  border: 1px solid #dfe6ee;
+  border-radius: 22px;
+  background: #fff;
+  color: #273750;
+  font-size: 25px;
+  font-weight: 700;
+
+  &::after { border: 0; }
+  &__mark { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; border-radius: 13px; background: #20b76a; color: #fff; font-size: 20px; }
+}
+
+.wechat-login-help { display: block; margin: 15px 12px 0; color: #98a5b7; font-size: 19px; line-height: 1.55; text-align: center; }

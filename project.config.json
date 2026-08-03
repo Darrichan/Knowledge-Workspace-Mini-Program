@@ -1,5 +1,6 @@
 {
   "miniprogramRoot": "dist/",
+  "cloudfunctionRoot": "cloudfunctions/",
   "projectname": "mini-program",
   "description": "Knowledge Workspace 微信小程序",
   "appid": "wx724356fd62af2379",
