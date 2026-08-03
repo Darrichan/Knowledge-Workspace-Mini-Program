@@ -37,15 +37,19 @@ function textOf(node: any): string {
   return Array.isArray(node.content) ? node.content.map(textOf).join('') : ''
 }
 
+const stringValue = (value: unknown, fallback = '') => typeof value === 'string' ? value : fallback
+
 function styleOf(node: any) {
   const leaf = Array.isArray(node?.content) ? node.content.find((item: any) => item?.type === 'text') : null
   const marks = leaf?.marks || []
+  const color = marks.find((mark: any) => mark?.type === 'textStyle')?.attrs?.color
+  const href = marks.find((mark: any) => mark?.type === 'link')?.attrs?.href
   return {
     bold: marks.some((mark: any) => mark.type === 'bold'),
     italic: marks.some((mark: any) => mark.type === 'italic'),
     underline: marks.some((mark: any) => mark.type === 'underline'),
-    color: marks.find((mark: any) => mark.type === 'textStyle')?.attrs?.color || undefined,
-    url: marks.find((mark: any) => mark.type === 'link')?.attrs?.href || undefined
+    color: stringValue(color) || undefined,
+    url: stringValue(href) || undefined
   }
 }
 
@@ -66,7 +70,7 @@ export function contentToBlocks(content?: Record<string, any>): DocumentBlock[] 
       if (bullet) return { ...base, type: 'bulletList', text: bullet[1] }
       const ordered = text.match(/^\d+[.)]\s+(.+)$/)
       if (ordered) return { ...base, type: 'orderedList', text: ordered[1] }
-      if (style.url?.startsWith('kw-mindmap://')) {
+      if (typeof style.url === 'string' && style.url.startsWith('kw-mindmap://')) {
         return {
           ...base,
           type: 'mindMapBlock',
@@ -79,12 +83,23 @@ export function contentToBlocks(content?: Record<string, any>): DocumentBlock[] 
     }
     if (node.type === 'heading') return { ...base, type: 'heading', text: textOf(node), level: Number(node.attrs?.level || 2) }
     if (node.type === 'blockquote') return { ...base, type: 'blockquote', text: textOf(node) }
-    if (node.type === 'codeBlock') return { ...base, type: 'codeBlock', text: textOf(node), language: node.attrs?.language || 'plaintext' }
+    if (node.type === 'codeBlock') return { ...base, type: 'codeBlock', text: textOf(node), language: stringValue(node.attrs?.language, 'plaintext') }
     if (node.type === 'horizontalRule') return { ...base, type: 'horizontalRule' }
     if (node.type === 'bulletList' || node.type === 'orderedList') return { ...base, type: node.type, text: listLines(node) }
     if (node.type === 'taskList') return { ...base, type: 'taskList', text: listLines(node), checkedLines: (node.content || []).map((item: any) => Boolean(item.attrs?.checked)) }
-    if (node.type === 'image') return { ...base, type: 'image', src: node.attrs?.['data-original-src'] || node.attrs?.src || '', thumbnail: node.attrs?.src || '', alt: node.attrs?.alt || '图片' }
-    if (node.type === 'mindMapBlock') return { ...base, type: 'mindMapBlock', mapId: String(node.attrs?.mapId || ''), title: node.attrs?.title || '未命名思维导图', nodeCount: Number(node.attrs?.nodeCount || 1), previewLabels: node.attrs?.previewLabels || [] }
+    if (node.type === 'image') {
+      const originalSrc = stringValue(node.attrs?.['data-original-src'])
+      const thumbnail = stringValue(node.attrs?.src)
+      return { ...base, type: 'image', src: originalSrc || thumbnail, thumbnail, alt: stringValue(node.attrs?.alt, '图片') }
+    }
+    if (node.type === 'mindMapBlock') return {
+      ...base,
+      type: 'mindMapBlock',
+      mapId: String(node.attrs?.mapId || ''),
+      title: stringValue(node.attrs?.title, '未命名思维导图'),
+      nodeCount: Number(node.attrs?.nodeCount || 1),
+      previewLabels: Array.isArray(node.attrs?.previewLabels) ? node.attrs.previewLabels.map((item: unknown) => String(item)) : []
+    }
     if (node.type === 'listItem' || node.type === 'taskItem') return { ...base, type: node.type === 'taskItem' ? 'taskList' : 'bulletList', text: textOf(node), checkedLines: node.type === 'taskItem' ? [Boolean(node.attrs?.checked)] : undefined }
     return { ...base, type: 'paragraph', text: textOf(node) }
   }).filter(Boolean) as DocumentBlock[]
