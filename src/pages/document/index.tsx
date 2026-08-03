@@ -321,29 +321,30 @@ export default function DocumentPage() {
           <View onClick={() => setLineType('orderedList')}>编号</View>
           <View onClick={() => setLineType('bulletList')}>列表</View>
           <View onClick={() => setLineType('blockquote')}>引用</View>
+          <View className={formats.italic ? 'on italic' : 'italic'} onClick={() => applyFormat('italic')}>I</View>
+          <View className={formats.underline ? 'on underline' : 'underline'} onClick={() => applyFormat('underline')}>U</View>
+          <View className={colorOpen ? 'color-tool on' : 'color-tool'} onClick={() => setColorOpen(!colorOpen)}><Text style={{ background: formats.color || COLORS[0] }} /></View>
+          <View onClick={() => editorRef.current?.undo()}>撤销</View>
+          <View onClick={() => editorRef.current?.redo()}>重做</View>
+          {keyboardHeight > 0 && <View onClick={() => { editorRef.current?.blur(); Taro.hideKeyboard(); setFormatOpen(false) }}>收起</View>}
         </View>
       </ScrollView>}
       <ScrollView className='editor-dock__scroll' scrollX showScrollbar={false}>
         <View className='editor-dock__inner'>
           <View className='primary compact' onClick={() => setInsertOpen(true)}>+</View>
-          <View className={formatOpen ? 'on' : ''} onClick={() => setFormatOpen(!formatOpen)}>文字</View>
+          <View className={formats.header ? 'on' : ''} onClick={() => setLineType('paragraph')}>正文</View>
           <View className={formats.bold ? 'on strong' : 'strong'} onClick={() => applyFormat('bold')}>B</View>
-          <View className={formats.italic ? 'on italic' : 'italic'} onClick={() => applyFormat('italic')}>I</View>
-          <View className={formats.underline ? 'on underline' : 'underline'} onClick={() => applyFormat('underline')}>U</View>
-          <View className={colorOpen ? 'color-tool on' : 'color-tool'} onClick={() => setColorOpen(!colorOpen)}><Text style={{ background: formats.color || COLORS[0] }} /></View>
           <View onClick={() => setLineType('bulletList')}>列表</View>
-          <View className={uploading ? 'disabled' : ''} onClick={chooseImage}>{uploading ? '上传中' : '图片'}</View>
           <View onClick={() => setLineType('taskList')}>待办</View>
+          <View className={uploading ? 'disabled' : ''} onClick={chooseImage}>{uploading ? '上传中' : '图片'}</View>
           <View onClick={openMindMap}>导图</View>
-          <View onClick={() => editorRef.current?.undo()}>撤销</View>
-          <View onClick={() => editorRef.current?.redo()}>重做</View>
-          {keyboardHeight > 0 && <View onClick={() => { editorRef.current?.blur(); Taro.hideKeyboard() }}>收起</View>}
+          <View className={formatOpen ? 'on' : ''} onClick={() => setFormatOpen(!formatOpen)}>更多</View>
         </View>
       </ScrollView>
     </View>}
 
     {colorOpen && <View className='color-mask' onClick={() => setColorOpen(false)} />}
-    {colorOpen && <View className='color-panel' style={keyboardHeight ? { bottom: `${keyboardHeight + 78}px` } : undefined}>
+    {colorOpen && <View className='color-panel' style={keyboardHeight ? { bottom: `${keyboardHeight + 104}px` } : undefined}>
       <View className='color-panel__head'><View><Text>字体颜色</Text><Text>点击色块即时应用</Text></View><View className='color-panel__close' onClick={() => setColorOpen(false)}>×</View></View>
       {recentColors.length > 0 && <View className='color-panel__section'><Text>最近使用</Text><View className='color-swatches recent'>{recentColors.map(color => <View key={color} className='color-swatch' style={{ background: color }} onClick={() => applyTextColor(color)} />)}</View></View>}
       <View className='color-panel__section'><Text>标准色</Text><View className='color-swatches'>{COLOR_GROUPS.flat().map(color => <View key={color} className={`color-swatch ${formats.color === color ? 'selected' : ''}`} style={{ background: color }} onClick={() => applyTextColor(color)} />)}</View></View>

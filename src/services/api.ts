@@ -190,10 +190,63 @@ export function resolveAssetUrl(path?: string) {
   return `${origin}${path.startsWith('/') ? path : `/${path}`}`
 }
 
+function cloudAssetPath(path: string) {
+  if (path.startsWith('/api/v1/')) return path.slice('/api/v1'.length)
+  if (path.startsWith('/')) return path
+  const marker = '/api/v1/'
+  const markerIndex = path.indexOf(marker)
+  return markerIndex >= 0 ? path.slice(markerIndex + '/api/v1'.length) : ''
+}
+
+function imageExtension(contentType: string) {
+  const extensions: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+    'image/avif': 'avif'
+  }
+  return extensions[contentType.toLowerCase()] || 'img'
+}
+
 export async function downloadAssetFile(path?: string) {
   const url = resolveAssetUrl(path)
   if (!url || /^(cloud:|wxfile:)/.test(url)) return url
   const token = Taro.getStorageSync<string>(TOKEN_KEY)
+  const proxyPath = cloudAssetPath(url)
+  if (API_MODE === 'cloud' && proxyPath) {
+    const cloudResult = await Taro.cloud.callFunction({
+      name: CLOUD_FUNCTION,
+      data: { path: proxyPath, method: 'GET', token: token || null }
+    })
+    const result = cloudResult.result as {
+      statusCode?: number
+      data?: { binaryBase64?: string; contentType?: string; error?: { message?: string }; message?: string }
+      error?: { message?: string }
+    } | undefined
+    if (result?.statusCode === 401) {
+      Taro.removeStorageSync(TOKEN_KEY)
+      await Taro.showToast({ title: '登录已过期', icon: 'none' })
+      await Taro.reLaunch({ url: '/pages/login/index' })
+      throw new Error('登录状态已过期')
+    }
+    const base64 = result?.data?.binaryBase64
+    if (result?.statusCode !== 200 || !base64) {
+      throw new Error(result?.data?.error?.message || result?.data?.message || result?.error?.message || '图片加载失败')
+    }
+    const extension = imageExtension(result.data?.contentType || '')
+    const filePath = `${Taro.env.USER_DATA_PATH}/kw-preview-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`
+    await new Promise<void>((resolve, reject) => {
+      Taro.getFileSystemManager().writeFile({
+        filePath,
+        data: base64,
+        encoding: 'base64',
+        success: () => resolve(),
+        fail: reject
+      })
+    })
+    return filePath
+  }
   const result = await Taro.downloadFile({
     url,
     timeout: 15000,

@@ -105,7 +105,10 @@ function blockFromLine(text: string, inline: Record<string, any>, line: Record<s
   if (line.header) return { ...base, type: 'heading', level: Number(String(line.header).replace(/\D/g, '')) || 2 }
   if (line.list === 'bullet') return { ...base, type: 'bulletList' }
   if (line.list === 'ordered') return { ...base, type: 'orderedList' }
-  if (line.list === 'check') return { ...base, type: 'taskList', checkedLines: [Boolean(line.checked)] }
+  if (line.list === 'check' || line.list === 'checked' || line.list === 'unchecked' || typeof line.checked === 'boolean') {
+    const checked = line.list === 'checked' || Boolean(line.checked)
+    return { ...base, type: 'taskList', checkedLines: [checked] }
+  }
   if (line.blockquote) return { ...base, type: 'blockquote' }
   if (line['code-block']) return { ...base, type: 'codeBlock', language: typeof line['code-block'] === 'string' ? line['code-block'] : 'plaintext' }
   if (inline.link) return { ...base, type: 'link', url: inline.link }

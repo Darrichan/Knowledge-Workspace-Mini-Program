@@ -10,8 +10,8 @@
 .document-top {
   position: relative;
   z-index: 12;
-  height: 82px;
-  padding: 0 22px;
+  height: 58px;
+  padding: 0 16px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -20,16 +20,16 @@
 }
 
 .document-top__type {
-  width: 46px;
-  height: 46px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex: none;
   color: #5b7fc8;
   background: #eef4ff;
-  border-radius: 14px;
-  font-size: 18px;
+  border-radius: 11px;
+  font-size: 16px;
   font-weight: 800;
 }
 
@@ -44,7 +44,7 @@
 }
 
 .document-top__action {
-  padding: 10px 14px;
+  padding: 8px 12px;
   color: #5578bd;
   background: #eef4ff;
   border-radius: 13px;
@@ -59,61 +59,63 @@
 }
 
 .document-scroll {
-  height: calc(100vh - 82px);
+  height: calc(100vh - 58px);
   background: #fff;
 }
 
 .document-paper {
-  min-height: calc(100vh - 210px);
-  padding: 0 34px;
+  min-height: calc(100vh - 130px);
+  padding: 0 18px;
   background: #fff;
 }
 
 .document-title-wrap {
-  padding: 38px 0 16px;
+  padding: 20px 0 10px;
 }
 
 .document-title {
   width: 100%;
-  min-height: 70px;
+  min-height: 52px;
   padding: 0;
   color: #17253a;
-  font-size: 44px;
+  font-size: 36px;
   font-weight: 800;
   line-height: 1.28;
 }
 
 .document-editor {
   width: 100%;
-  min-height: calc(100vh - 310px);
-  padding: 4px 0 80px;
+  min-height: calc(100vh - 190px);
+  padding: 4px 0 96px;
   color: #33445a;
   background: transparent;
-  font-size: 24px;
-  line-height: 1.72;
+  font-size: 18px;
+  line-height: 1.68;
   box-sizing: border-box;
 }
 
 .document-editor::before {
   color: #a0abba;
-  font-size: 24px;
+  font-size: 18px;
 }
 
 .document-editor image,
 .document-editor img {
   max-width: 100%;
   height: auto;
-  margin: 18px 0;
-  border-radius: 14px;
+  max-height: 184px;
+  margin: 12px 0;
+  border-radius: 10px;
+  object-fit: cover;
   background: #f1f4f8;
 }
 
 .document-bottom-space {
-  height: 90px;
+  height: 76px;
 }
 
 .document-bottom-space.dock-visible {
-  height: 170px;
+  height: 128px;
 }
 
 .floating-insert {
@@ -175,39 +177,39 @@
 
 .editor-dock__inner,
 .format-strip__inner {
-  height: 72px;
-  padding: 0 16px;
+  height: 52px;
+  padding: 0 8px;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
 .format-strip__inner {
-  height: 56px;
+  height: 44px;
 }
 
 .editor-dock__inner > view,
 .editor-dock__inner picker > view,
 .format-strip__inner > view {
-  min-width: 64px;
-  height: 52px;
-  padding: 0 16px;
+  min-width: 48px;
+  height: 42px;
+  padding: 0 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: #50627a;
   background: #f2f5f8;
-  border-radius: 11px;
-  font-size: 22px;
+  border-radius: 9px;
+  font-size: 17px;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .editor-dock__inner > view.compact {
-  min-width: 48px;
-  width: 48px;
+  min-width: 42px;
+  width: 42px;
   padding: 0;
-  font-size: 30px;
+  font-size: 25px;
   font-weight: 400;
 }
 

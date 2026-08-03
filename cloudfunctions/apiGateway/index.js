@@ -33,7 +33,19 @@ function proxyRequest({ path, method, data, token, binaryBase64, contentType, fi
       })
 
       response.on('end', () => {
-        const raw = Buffer.concat(chunks).toString('utf8')
+        const responseBuffer = Buffer.concat(chunks)
+        const responseType = String(response.headers['content-type'] || '').split(';', 1)[0].toLowerCase()
+        if (responseType.startsWith('image/')) {
+          resolve({
+            statusCode: response.statusCode || 502,
+            data: {
+              binaryBase64: responseBuffer.toString('base64'),
+              contentType: responseType
+            }
+          })
+          return
+        }
+        const raw = responseBuffer.toString('utf8')
         let payload = null
         if (raw) {
           try {
