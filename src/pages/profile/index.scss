@@ -1,0 +1,24 @@
+.profile-page { min-height: 100vh; background: linear-gradient(160deg,#f8faff,#f8f5fb); }
+.profile-card { display: flex; flex-direction: column; align-items: center; margin-top: 35px; padding: 38px; border: 1px solid #e1e7f0; border-radius: 34px; background: rgba(255,255,255,.92); box-shadow: 0 18px 42px rgba(54,70,103,.07); }
+.profile-card__avatar { width: 105px; height: 105px; display: flex; align-items: center; justify-content: center; border-radius: 34px; background: linear-gradient(145deg,#e8efff,#f4eafa); color: #617cc1; font-size: 39px; font-weight: 800; }
+.profile-card__name { margin-top: 21px; color: #24344c; font-size: 31px; font-weight: 800; }
+.profile-card__email { margin-top: 7px; color: #8c9aaf; font-size: 21px; }
+.profile-card__badge { margin-top: 17px; padding: 7px 16px; border-radius: 14px; background: #eaf7f3; color: #438e7c; font-size: 18px; font-weight: 700; }
+.wechat-bind-card { margin-top: 23px; padding: 28px 25px; display: flex; align-items: flex-start; gap: 20px; border: 1px solid #f0dfc8; border-radius: 28px; background: linear-gradient(145deg,#fffaf3,#fff); box-shadow: 0 14px 32px rgba(143,98,45,.06); }
+.wechat-bind-card--bound { border-color: #cce9da; background: linear-gradient(145deg,#effaf5,#fff); }
+.wechat-bind-card__icon { width: 68px; height: 68px; display: flex; flex: 0 0 auto; align-items: center; justify-content: center; border-radius: 22px; background: #1aad6f; color: #fff; font-size: 27px; font-weight: 800; box-shadow: 0 9px 20px rgba(26,173,111,.2); }
+.wechat-bind-card__content { min-width: 0; flex: 1; }
+.wechat-bind-card__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #293a51; font-size: 25px; font-weight: 800; }
+.wechat-bind-card__status { flex: 0 0 auto; padding: 5px 12px; border-radius: 999px; background: #fff0dc; color: #b87930; font-size: 17px; font-weight: 700; }
+.wechat-bind-card--bound .wechat-bind-card__status { background: #def5e9; color: #27865c; }
+.wechat-bind-card__copy { display: block; margin-top: 10px; color: #7d8b9f; font-size: 20px; line-height: 1.55; }
+.wechat-bind-card__button { height: 68px; margin-top: 20px; border: 0; border-radius: 20px; background: #1aad6f; color: #fff; font-size: 22px; font-weight: 700; line-height: 68px; }
+.wechat-bind-card__button[disabled] { opacity: .55; }
+.settings-card { margin-top: 23px; padding: 0 24px; border: 1px solid #e2e8f1; border-radius: 28px; background: #fff; }
+.settings-row { min-height: 86px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #edf0f5; color: #33445d; font-size: 23px; }
+.settings-row:last-child { border-bottom: 0; }
+.settings-row__value { color: #8493a8; }
+.settings-row__value--online { color: #3f927e; }
+.settings-row--stack { align-items: flex-start; flex-direction: column; justify-content: center; gap: 7px; padding: 17px 0; }
+.settings-row__api { max-width: 100%; overflow: hidden; color: #8796aa; font-size: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.logout-button { height: 82px; margin-top: 28px; border: 1px solid #eedcdc; border-radius: 24px; background: #fff; color: #c15f64; font-size: 24px; }

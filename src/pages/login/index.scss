@@ -1,0 +1,47 @@
+.login-page {
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+  padding: calc(64px + env(safe-area-inset-top)) 34px 44px;
+  background: linear-gradient(165deg, #f9fbff 4%, #f3f6fc 58%, #f9f5fb 100%);
+
+  &__halo { position: absolute; border-radius: 50%; filter: blur(18px); opacity: .64; }
+  &__halo--top { width: 420px; height: 420px; top: -170px; right: -190px; background: #e6e5ff; }
+  &__halo--bottom { width: 500px; height: 500px; bottom: -300px; left: -240px; background: #daf2ef; }
+  &__brand { position: relative; margin: 32px 22px 54px; }
+  &__footer { position: relative; display: block; margin-top: 35px; color: #9aa6b8; font-size: 20px; text-align: center; }
+}
+
+.login-card {
+  position: relative;
+  padding: 38px 30px 32px;
+  border: 1px solid rgba(218, 226, 239, .9);
+  border-radius: 36px;
+  background: rgba(255, 255, 255, .9);
+  box-shadow: 0 26px 70px rgba(58, 74, 108, .1);
+  backdrop-filter: blur(24px);
+
+  &__heading { display: flex; flex-direction: column; gap: 8px; margin: 0 4px 25px; }
+  &__title { color: #1c2b42; font-size: 42px; font-weight: 800; }
+  &__subtitle { color: #8998ad; font-size: 22px; }
+  &__submit { margin-top: 28px; }
+}
+
+.mode-switch {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 6px; margin-bottom: 24px;
+  border-radius: 22px; background: #f1f4f9; color: #8492a8; font-size: 24px; text-align: center;
+  view { padding: 17px; border-radius: 17px; }
+  .active { background: #fff; color: #4569b7; font-weight: 700; box-shadow: 0 7px 18px rgba(68, 86, 124, .08); }
+}
+
+.form-stack { display: flex; flex-direction: column; gap: 17px; }
+.form-input { height: 88px; padding: 0 24px; border: 1px solid #e2e8f1; border-radius: 22px; background: #fbfcfe; color: #273750; font-size: 26px; }
+
+.slider-card {
+  margin-top: 22px; padding: 18px 20px 13px; border: 1px solid #e2e8f1; border-radius: 22px; background: #f8faff;
+  &--verified { border-color: #bde3d8; background: #effaf7; }
+  &__label { display: flex; justify-content: space-between; padding: 0 5px 8px; color: #6f809a; font-size: 21px; }
+  &__refresh { color: #5578c6; }
+  &__track { position: relative; }
+  &__target { position: absolute; z-index: 2; top: 20px; width: 4px; height: 18px; border-radius: 4px; background: #89a5df; transform: translateX(-50%); pointer-events: none; }
+}

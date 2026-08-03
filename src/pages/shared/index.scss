@@ -1,0 +1,10 @@
+.shared-page { min-height: 100vh; }
+.shared-heading { display: flex; flex-direction: column; margin: 8px 3px 35px; }
+.shared-heading__label { color: #8e9db2; font-size: 17px; font-weight: 700; letter-spacing: 2px; }
+.shared-heading__title { margin-top: 8px; color: #1e2e46; font-size: 43px; font-weight: 800; }
+.shared-heading__copy { margin-top: 7px; color: #8c9bb0; font-size: 22px; }
+.shared-list { display: flex; flex-direction: column; gap: 15px; }
+.shared-empty { min-height: 520px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.shared-empty__orb { width: 104px; height: 104px; display: flex; align-items: center; justify-content: center; border-radius: 34px; background: linear-gradient(145deg,#e8f6f2,#eae6fb); color: #5b9487; font-size: 34px; font-weight: 800; }
+.shared-empty__title { margin-top: 25px; color: #314158; font-size: 28px; font-weight: 700; }
+.shared-empty__copy { width: 76%; margin-top: 11px; color: #98a4b6; font-size: 21px; line-height: 1.6; }

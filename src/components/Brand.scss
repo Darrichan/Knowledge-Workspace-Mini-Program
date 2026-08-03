@@ -1,0 +1,17 @@
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+
+  &__mark { width: 82px; height: 82px; }
+  &__copy { display: flex; flex-direction: column; gap: 2px; }
+  &__name { color: #1b2940; font-size: 38px; font-weight: 800; letter-spacing: 2px; }
+  &__en { color: #8492a8; font-size: 16px; font-weight: 700; letter-spacing: 2.4px; }
+
+  &--compact {
+    gap: 12px;
+    .brand__mark { width: 58px; height: 58px; }
+    .brand__name { font-size: 30px; }
+    .brand__en { font-size: 13px; }
+  }
+}

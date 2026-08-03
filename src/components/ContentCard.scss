@@ -1,0 +1,28 @@
+.content-card {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 18px 22px;
+  border: 1px solid #e5eaf2;
+  border-radius: 26px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 10px 28px rgba(52, 73, 111, .06);
+  transition: transform .15s ease, background .15s ease;
+
+  &--pressed { transform: scale(.985); background: #f8faff; }
+  &__icon {
+    width: 72px; height: 72px; flex: 0 0 72px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 21px; color: #5379c8; background: #ecf3ff;
+    font-size: 25px; font-weight: 800;
+    &--mind { color: #7d67ba; background: #f2edff; }
+    &--sheet { color: #398e7e; background: #eaf8f4; }
+    &--gantt { color: #ca7b47; background: #fff2e9; }
+    &--folder { color: #bd8b39; background: #fff6dc; }
+  }
+  &__body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 8px; }
+  &__title { overflow: hidden; color: #21314a; font-size: 27px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+  &__meta { color: #91a0b5; font-size: 20px; }
+  &__arrow { color: #9ba9bc; font-size: 42px; font-weight: 300; }
+}

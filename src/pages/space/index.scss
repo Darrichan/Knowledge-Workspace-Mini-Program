@@ -1,0 +1,18 @@
+.space-page { min-height: 100vh; background: linear-gradient(180deg, #f7f9fd, #fbf9fc); }
+.space-heading { display: flex; align-items: center; justify-content: space-between; margin: 7px 3px 28px; }
+.space-heading > view:first-child { display: flex; flex-direction: column; }
+.space-heading__eyebrow { color: #91a0b5; font-size: 17px; font-weight: 700; letter-spacing: 2px; }
+.space-heading__title { margin-top: 8px; color: #1d2d45; font-size: 43px; font-weight: 800; }
+.space-heading__copy { margin-top: 5px; color: #8c9bb0; font-size: 21px; }
+.space-heading__add { width: 76px; height: 76px; display: flex; align-items: center; justify-content: center; border-radius: 24px; background: #668bdd; color: #fff; font-size: 42px; box-shadow: 0 15px 30px rgba(83,117,190,.22); }
+.space-heading__add--pressed { transform: scale(.96); }
+.search-box { height: 82px; display: flex; align-items: center; gap: 14px; padding: 0 21px; border: 1px solid #e1e7f0; border-radius: 23px; background: #fff; color: #8394ac; }
+.search-box input { flex: 1; color: #263750; font-size: 24px; }
+.search-box__count { min-width: 39px; padding: 5px 10px; border-radius: 13px; background: #eef3fb; color: #7690c7; font-size: 18px; text-align: center; }
+.filter-row { display: flex; gap: 12px; margin: 20px 0 24px; overflow: hidden; }
+.filter-chip { flex: 0 0 auto; padding: 12px 21px; border-radius: 18px; background: #eef2f7; color: #8492a7; font-size: 20px; }
+.filter-chip.active { background: #e9f1ff; color: #5274bc; font-weight: 700; }
+.space-list { display: flex; flex-direction: column; gap: 15px; padding-bottom: 120px; }
+.space-empty { padding: 110px 0; color: #99a6b8; text-align: center; }
+.floating-create { position: fixed; z-index: 5; right: 30px; bottom: calc(38px + env(safe-area-inset-bottom)); height: 78px; display: flex; align-items: center; gap: 10px; padding: 0 28px; border-radius: 39px; background: linear-gradient(135deg,#7095e5,#5d7fd1); color: #fff; font-size: 33px; box-shadow: 0 18px 40px rgba(65,94,159,.3); }
+.floating-create text { font-size: 23px; font-weight: 700; }
