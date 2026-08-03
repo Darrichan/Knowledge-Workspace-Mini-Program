@@ -24,6 +24,8 @@ export type DocumentItem = {
   version: number
   updated_at: string
   access_role?: string
+  owner_name?: string | null
+  published_at?: string | null
 }
 
 export type AuthResponse = {
@@ -42,4 +44,70 @@ export type MindMapNode = {
   id: string
   label: string
   color: string
+  parent_id?: string | null
+  priority?: number | null
+  marker?: string | null
+  fontSize?: number
+}
+
+export type DocumentVersion = {
+  id: string
+  document_id: string
+  version: number
+  title: string
+  content: Record<string, any>
+  created_by: string
+  actor_name?: string | null
+  reason: string
+  created_at: string
+}
+
+export type DocumentShare = {
+  id: string
+  user_id: string
+  email: string
+  display_name: string
+  permission: 'viewer' | 'editor'
+  created_at: string
+}
+
+export type MindMapItem = {
+  id: string
+  document_id: string
+  title: string
+  graph: Record<string, any>
+  theme?: string
+  layout?: string
+  version: number
+  created_at: string
+  updated_at: string
+}
+
+export type MindMapVersion = {
+  id: string
+  mind_map_id: string
+  version: number
+  title: string
+  graph: Record<string, any>
+  created_by: string
+  actor_name?: string | null
+  reason: string
+  created_at: string
+}
+
+export type GanttTask = {
+  id: string
+  name: string
+  start: string
+  end: string
+  progress: number
+}
+
+export type SheetFormat = {
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  color?: string
+  background?: string
+  align?: 'left' | 'center' | 'right'
 }

@@ -5,8 +5,11 @@ export default defineAppConfig({
     'pages/space/index',
     'pages/shared/index',
     'pages/profile/index',
+    'pages/scan-login/index',
     'pages/document/index',
-    'pages/mindmap/index'
+    'pages/mindmap/index',
+    'pages/spreadsheet/index',
+    'pages/gantt/index'
   ],
   window: {
     backgroundTextStyle: 'light',

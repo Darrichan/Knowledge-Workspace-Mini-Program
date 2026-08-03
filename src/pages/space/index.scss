@@ -9,6 +9,10 @@
 .search-box { height: 82px; display: flex; align-items: center; gap: 14px; padding: 0 21px; border: 1px solid #e1e7f0; border-radius: 23px; background: #fff; color: #8394ac; }
 .search-box input { flex: 1; color: #263750; font-size: 24px; }
 .search-box__count { min-width: 39px; padding: 5px 10px; border-radius: 13px; background: #eef3fb; color: #7690c7; font-size: 18px; text-align: center; }
+.folder-breadcrumb { margin: -10px 0 18px; display: flex; align-items: center; gap: 13px; color: #7386a1; font-size: 19px; }
+.folder-breadcrumb > view { flex: 0 0 auto; padding: 10px 15px; border-radius: 15px; background: #eaf1ff; color: #5579c5; font-weight: 700; }
+.folder-breadcrumb scroll-view { min-width: 0; flex: 1; white-space: nowrap; }
+.folder-breadcrumb text { color: #8b98aa; }
 .filter-row { display: flex; gap: 12px; margin: 20px 0 24px; overflow: hidden; }
 .filter-chip { flex: 0 0 auto; padding: 12px 21px; border-radius: 18px; background: #eef2f7; color: #8492a7; font-size: 20px; }
 .filter-chip.active { background: #e9f1ff; color: #5274bc; font-weight: 700; }

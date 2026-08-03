@@ -1,0 +1,40 @@
+.panel-mask { position: fixed; inset: 0; z-index: 100; display: flex; align-items: flex-end; background: rgba(25,35,52,.35); }
+.document-panel { width: 100%; height: min(78vh, 980px); overflow: hidden; background: #fff; border-radius: 34px 34px 0 0; box-shadow: 0 -18px 60px rgba(34,49,75,.16); }
+.document-panel__header { min-height: 105px; padding: 22px 27px; display: flex; align-items: center; border-bottom: 1px solid #e7ebf1; }
+.document-panel__header > view:first-child { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 5px; }
+.document-panel__header > view:first-child text:first-child { color: #23334a; font-size: 29px; font-weight: 800; }
+.document-panel__header > view:first-child text:last-child { color: #8b98aa; font-size: 18px; }
+.document-panel__header > view:last-child { width: 54px; height: 54px; display: flex; align-items: center; justify-content: center; color: #718096; background: #f1f4f8; border-radius: 18px; font-size: 34px; }
+.panel-loading,.panel-empty { padding: 70px 20px; color: #94a0b1; text-align: center; font-size: 20px; }
+.history-layout { height: calc(100% - 105px); display: grid; grid-template-columns: 245px 1fr; }
+.history-list { height: 100%; background: #f7f9fc; border-right: 1px solid #e5eaf1; }
+.history-item { padding: 20px 19px; display: flex; flex-direction: column; gap: 6px; border-bottom: 1px solid #e8edf3; }
+.history-item text:first-child { color: #40526a; font-size: 21px; font-weight: 700; }
+.history-item text:last-child { color: #929eae; font-size: 15px; line-height: 1.5; }
+.history-item.active { background: #eaf1ff; box-shadow: inset 5px 0 0 #6086d5; }
+.history-preview { height: 100%; padding: 28px 25px 120px; }
+.history-preview__title { display: block; color: #23334a; font-size: 31px; font-weight: 800; }
+.history-preview__meta { margin-top: 7px; display: block; color: #91a0b3; font-size: 16px; }
+.history-preview__body { margin-top: 28px; display: block; color: #45576f; white-space: pre-wrap; font-size: 22px; line-height: 1.8; }
+.panel-actions { margin-top: 35px; display: flex; flex-direction: column; gap: 12px; }
+.panel-actions view { padding: 18px; color: #fff; background: #6388d5; border-radius: 16px; text-align: center; font-size: 20px; font-weight: 700; }
+.panel-actions view.danger { color: #b05c64; background: #fff0f1; }
+.share-body { height: calc(100% - 105px); padding: 24px 25px 120px; }
+.publish-card { padding: 20px; display: flex; align-items: center; background: #f5f8fc; border: 1px solid #e0e7f1; border-radius: 18px; }
+.publish-card > view:first-child { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+.publish-card text:first-child { color: #34475e; font-size: 22px; font-weight: 700; }
+.publish-card text:last-child { color: #8d9aab; font-size: 16px; }
+.publish-card > view:last-child { padding: 12px 18px; color: #5f7fbf; background: #e7eefb; border-radius: 14px; font-size: 18px; }
+.publish-card > view:last-child.on { color: #a65a61; background: #fbe9eb; }
+.share-form { margin-top: 21px; display: grid; grid-template-columns: 1fr 125px 88px; gap: 9px; }
+.share-form input,.permission-picker,.share-submit { height: 64px; padding: 0 15px; display: flex; align-items: center; border: 1px solid #dce4ef; border-radius: 15px; font-size: 18px; }
+.permission-picker { color: #5e7088; background: #f7f9fc; }
+.share-submit { justify-content: center; color: #fff; background: #6388d5; font-weight: 700; }
+.share-heading { margin: 30px 0 11px; display: block; color: #7e8ca0; font-size: 17px; font-weight: 700; }
+.share-row { min-height: 84px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #edf0f4; }
+.share-avatar { width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; color: #fff; background: #718fd0; border-radius: 16px; font-size: 19px; font-weight: 800; }
+.share-person { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.share-person text:first-child { color: #394a61; font-size: 20px; font-weight: 700; }
+.share-person text:last-child { overflow: hidden; color: #94a0b0; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.share-permission { padding: 10px 13px; color: #5f78a8; background: #edf2fb; border-radius: 12px; font-size: 16px; }
+.share-remove { width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; color: #b7686e; font-size: 27px; }

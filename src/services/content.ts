@@ -1,8 +1,8 @@
 import Taro from '@tarojs/taro'
 import { documentApi } from './api'
-import { CREATE_TYPES, openDocument } from './navigation'
+import { CREATE_TYPES, initialContent, openDocument } from './navigation'
 
-export async function chooseAndCreate(workspaceId: string, onCreated?: () => void) {
+export async function chooseAndCreate(workspaceId: string, onCreated?: () => void, parentId: string | null = null) {
   if (!workspaceId) {
     Taro.showToast({ title: '工作空间尚未准备好', icon: 'none' })
     return
@@ -12,7 +12,7 @@ export async function chooseAndCreate(workspaceId: string, onCreated?: () => voi
     const choice = CREATE_TYPES[result.tapIndex]
     if (!choice) return
     Taro.showLoading({ title: '正在创建', mask: true })
-    const created = await documentApi.create(workspaceId, choice.type, choice.title)
+    const created = await documentApi.create(workspaceId, choice.type, choice.title, parentId, initialContent(choice.type))
     Taro.hideLoading()
     onCreated?.()
     if (created.type === 'folder') {

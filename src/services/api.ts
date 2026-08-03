@@ -1,5 +1,5 @@
 import Taro from '@tarojs/taro'
-import type { AuthResponse, DocumentItem, DocumentType, User, WechatBindingStatus, Workspace } from '../types/domain'
+import type { AuthResponse, DocumentItem, DocumentShare, DocumentType, DocumentVersion, MindMapItem, MindMapVersion, User, WechatBindingStatus, Workspace } from '../types/domain'
 
 const API_BASE = (process.env.TARO_APP_API_BASE || 'http://127.0.0.1:18000/api/v1').replace(/\/$/, '')
 const API_MODE = process.env.TARO_APP_API_MODE || 'direct'
@@ -10,6 +10,14 @@ type ApiOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
   data?: Record<string, any>
   loading?: boolean
+}
+
+type UploadedAsset = {
+  url: string
+  thumbnail_url: string
+  name: string
+  size: number
+  mime_type: string
 }
 
 export async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
@@ -96,6 +104,10 @@ export const authApi = {
     method: 'POST',
     data: { code }
   }),
+  confirmPcScan: (ticket: string, code: string) => request<{ status: 'confirmed'; user: User }>('/auth/wechat/mini/scan-confirm', {
+    method: 'POST',
+    data: { ticket, code }
+  }),
   saveSession: (result: AuthResponse) => {
     Taro.setStorageSync(TOKEN_KEY, result.access_token)
     Taro.setStorageSync('kw_mini_user', result.user)
@@ -117,14 +129,84 @@ export const workspaceApi = {
 
 export const documentApi = {
   get: (id: string) => request<DocumentItem>(`/documents/${id}`),
-  create: (workspaceId: string, type: DocumentType, title: string, parentId: string | null = null) => request<DocumentItem>('/documents', {
+  create: (workspaceId: string, type: DocumentType, title: string, parentId: string | null = null, content?: Record<string, any>) => request<DocumentItem>('/documents', {
     method: 'POST',
-    data: { workspace_id: workspaceId, parent_id: parentId, type, title }
+    data: { workspace_id: workspaceId, parent_id: parentId, type, title, ...(content ? { content } : {}) }
   }),
   update: (id: string, baseVersion: number, title: string, content: Record<string, any>, reason = 'interval') => request<DocumentItem>(`/documents/${id}`, {
     method: 'PATCH',
     data: { base_version: baseVersion, title, content, reason }
+  }),
+  remove: (id: string) => request<void>(`/documents/${id}`, { method: 'DELETE' }),
+  versions: (id: string) => request<DocumentVersion[]>(`/documents/${id}/versions`),
+  restoreVersion: (id: string, versionId: string) => request<DocumentItem>(`/documents/${id}/versions/${versionId}/restore`, { method: 'POST' }),
+  deleteVersion: (id: string, versionId: string) => request<void>(`/documents/${id}/versions/${versionId}`, { method: 'DELETE' }),
+  shares: (id: string) => request<DocumentShare[]>(`/documents/${id}/shares`),
+  share: (id: string, email: string, permission: 'viewer' | 'editor') => request<DocumentShare>(`/documents/${id}/shares`, { method: 'POST', data: { email, permission } }),
+  updateShare: (id: string, shareId: string, permission: 'viewer' | 'editor') => request<DocumentShare>(`/documents/${id}/shares/${shareId}`, { method: 'PATCH', data: { permission } }),
+  deleteShare: (id: string, shareId: string) => request<void>(`/documents/${id}/shares/${shareId}`, { method: 'DELETE' }),
+  publish: (id: string) => request<DocumentItem>(`/documents/${id}/publish`, { method: 'POST' }),
+  unpublish: (id: string) => request<DocumentItem>(`/documents/${id}/publish`, { method: 'DELETE' }),
+  uploadImage: (id: string, filePath: string, name = 'image.jpg') => uploadDocumentImage(id, filePath, name)
+}
+
+export const mindMapApi = {
+  list: (documentId: string) => request<MindMapItem[]>(`/documents/${documentId}/mind-maps`),
+  create: (documentId: string, title: string, graph: Record<string, any>) => request<MindMapItem>(`/documents/${documentId}/mind-maps`, { method: 'POST', data: { title, graph, theme: 'colorful', layout: 'right' } }),
+  get: (documentId: string, mapId: string) => request<MindMapItem>(`/documents/${documentId}/mind-maps/${mapId}`),
+  update: (documentId: string, mapId: string, item: MindMapItem, reason = 'interval') => request<MindMapItem>(`/documents/${documentId}/mind-maps/${mapId}`, { method: 'PUT', data: { base_version: item.version, title: item.title, graph: item.graph, reason } }),
+  remove: (documentId: string, mapId: string) => request<void>(`/documents/${documentId}/mind-maps/${mapId}`, { method: 'DELETE' }),
+  versions: (documentId: string, mapId: string) => request<MindMapVersion[]>(`/documents/${documentId}/mind-maps/${mapId}/versions`),
+  restoreVersion: (documentId: string, mapId: string, versionId: string) => request<MindMapItem>(`/documents/${documentId}/mind-maps/${mapId}/versions/${versionId}/restore`, { method: 'POST' }),
+  deleteVersion: (documentId: string, mapId: string, versionId: string) => request<void>(`/documents/${documentId}/mind-maps/${mapId}/versions/${versionId}`, { method: 'DELETE' })
+}
+
+async function uploadDocumentImage(documentId: string, filePath: string, name: string): Promise<UploadedAsset> {
+  const token = Taro.getStorageSync<string>(TOKEN_KEY)
+  const extension = name.split('.').pop()?.toLowerCase() || 'jpg'
+  const mimeTypes: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif' }
+  const contentType = mimeTypes[extension] || 'image/jpeg'
+  if (API_MODE === 'cloud') {
+    const base64 = await new Promise<string>((resolve, reject) => {
+      Taro.getFileSystemManager().readFile({ filePath, encoding: 'base64', success: result => resolve(String(result.data)), fail: reject })
+    })
+    const cloudResult = await Taro.cloud.callFunction({ name: CLOUD_FUNCTION, data: { path: `/documents/${documentId}/assets`, method: 'POST', token, binaryBase64: base64, contentType, fileName: name } })
+    const result = cloudResult.result as { statusCode?: number; data?: UploadedAsset; error?: { message?: string } } | undefined
+    if (!result || result.statusCode !== 201 || !result.data) throw new Error((result?.data as any)?.error?.message || result?.error?.message || '图片上传失败')
+    return result.data
+  }
+  const binary = await new Promise<ArrayBuffer>((resolve, reject) => {
+    Taro.getFileSystemManager().readFile({ filePath, success: result => resolve(result.data as ArrayBuffer), fail: reject })
   })
+  const response = await Taro.request<UploadedAsset>({ url: `${API_BASE}/documents/${documentId}/assets`, method: 'POST', data: binary, header: { 'content-type': contentType, 'x-file-name': encodeURIComponent(name), ...(token ? { Authorization: `Bearer ${token}` } : {}) } })
+  if (response.statusCode !== 201) throw new Error((response.data as any)?.error?.message || '图片上传失败')
+  return response.data
+}
+
+export function resolveAssetUrl(path?: string) {
+  if (!path) return ''
+  if (/^(https?:|cloud:|wxfile:)/.test(path)) return path
+  const origin = API_BASE.replace(/\/api\/v1$/, '')
+  return `${origin}${path.startsWith('/') ? path : `/${path}`}`
+}
+
+export async function downloadAssetFile(path?: string) {
+  const url = resolveAssetUrl(path)
+  if (!url || /^(cloud:|wxfile:)/.test(url)) return url
+  const token = Taro.getStorageSync<string>(TOKEN_KEY)
+  const result = await Taro.downloadFile({
+    url,
+    timeout: 15000,
+    header: token ? { Authorization: `Bearer ${token}` } : {}
+  })
+  if (result.statusCode === 401) {
+    Taro.removeStorageSync(TOKEN_KEY)
+    await Taro.showToast({ title: '登录已过期', icon: 'none' })
+    await Taro.reLaunch({ url: '/pages/login/index' })
+    throw new Error('登录状态已过期')
+  }
+  if (result.statusCode < 200 || result.statusCode >= 300) throw new Error('图片加载失败')
+  return result.tempFilePath
 }
 
 export function textToContent(text: string) {

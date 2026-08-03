@@ -4,15 +4,17 @@ const API_BASE = (process.env.KW_API_BASE || 'https://kw.darrichan.top/api/v1').
 const ALLOWED_METHODS = new Set(['GET', 'POST', 'PATCH', 'PUT', 'DELETE'])
 const MAX_RESPONSE_BYTES = 6 * 1024 * 1024
 
-function proxyRequest({ path, method, data, token }) {
+function proxyRequest({ path, method, data, token, binaryBase64, contentType, fileName }) {
   return new Promise((resolve) => {
-    const body = method === 'GET' || data == null ? null : JSON.stringify(data)
+    const binaryBody = typeof binaryBase64 === 'string' && binaryBase64 ? Buffer.from(binaryBase64, 'base64') : null
+    const body = binaryBody || (method === 'GET' || data == null ? null : JSON.stringify(data))
     const request = https.request(`${API_BASE}${path}`, {
       method,
       timeout: 15000,
       headers: {
         accept: 'application/json',
-        'content-type': 'application/json',
+        'content-type': binaryBody ? (contentType || 'application/octet-stream') : 'application/json',
+        ...(binaryBody ? { 'x-file-name': encodeURIComponent(String(fileName || 'image.jpg').slice(0, 240)) } : {}),
         'user-agent': 'KW-WeChat-Cloud-Gateway/1.0',
         ...(body ? { 'content-length': Buffer.byteLength(body) } : {}),
         ...(token ? { authorization: `Bearer ${token}` } : {})
@@ -69,5 +71,5 @@ exports.main = async (event = {}) => {
     return { statusCode: 405, data: { error: { message: '请求方法不受支持' } } }
   }
 
-  return proxyRequest({ path, method, data: event.data, token })
+  return proxyRequest({ path, method, data: event.data, token, binaryBase64: event.binaryBase64, contentType: event.contentType, fileName: event.fileName })
 }
