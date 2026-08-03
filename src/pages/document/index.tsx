@@ -91,10 +91,11 @@ export default function DocumentPage() {
   const [insertOpen, setInsertOpen] = useState(false)
   const [panel, setPanel] = useState<'history' | 'share' | null>(null)
   const [keyboardHeight, setKeyboardHeight] = useState(0)
-  const initialWindowHeightRef = useRef(Taro.getWindowInfo().windowHeight)
-  const [viewportHeight, setViewportHeight] = useState(initialWindowHeightRef.current)
-  const keyboardViewportRef = useRef(0)
+  const [keyboardInset, setKeyboardInset] = useState(0)
+  const windowHeightRef = useRef(Taro.getWindowInfo().windowHeight)
   const keyboardCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dockInteractionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dockInteractionRef = useRef(false)
   const [, setEditorActive] = useState(false)
   const [formatOpen, setFormatOpen] = useState(false)
   const [formats, setFormats] = useState<Record<string, any>>({})
@@ -192,53 +193,85 @@ export default function DocumentPage() {
   }, [title, blocks])
 
   useEffect(() => {
+    const clearKeyboardCloseTimer = () => {
+      if (!keyboardCloseTimerRef.current) return
+      clearTimeout(keyboardCloseTimerRef.current)
+      keyboardCloseTimerRef.current = null
+    }
+
+    const resetKeyboardLayout = () => {
+      keyboardCloseTimerRef.current = null
+      setKeyboardHeight(0)
+      setKeyboardInset(0)
+      const reportedHeight = Math.max(0, Number(Taro.getWindowInfo().windowHeight) || 0)
+      if (reportedHeight > windowHeightRef.current) windowHeightRef.current = reportedHeight
+    }
+
     const listener = ({ height }: { height: number }) => {
       const nextHeight = Math.max(0, Number(height) || 0)
       if (nextHeight > 0) {
-        // 光标在 Editor、Textarea 之间切换时，微信会短暂上报 0，
-        // 还会因候选栏变化重复上报高度。只要键盘重新出现就取消关闭，
-        // 避免把同一次输入误判为多次会话。
-        if (keyboardCloseTimerRef.current) {
-          clearTimeout(keyboardCloseTimerRef.current)
-          keyboardCloseTimerRef.current = null
-        }
+        clearKeyboardCloseTimer()
         setKeyboardHeight(nextHeight)
 
-        // 同一次键盘会话只在第一个有效事件确定可视区。
-        // 后续的滚动、候选栏和焦点切换都不能再改变工具栏位置。
-        if (!keyboardViewportRef.current) {
-          const baseline = initialWindowHeightRef.current
-          const reportedHeight = Math.max(0, Number(Taro.getWindowInfo().windowHeight) || 0)
-          const reportedHasShrunk = reportedHeight > 0 && reportedHeight < baseline - 48
-          const calculatedHeight = baseline - nextHeight
-          // windowHeight 已经随键盘缩小时直接使用；仍是全屏值时才扣除键盘。
-          // 不能将未缩小的全屏高度当成可视区，否则工具栏会落到键盘后面。
-          keyboardViewportRef.current = Math.max(
-            320,
-            Math.min(baseline, reportedHasShrunk ? reportedHeight : calculatedHeight)
-          )
-        }
-        setViewportHeight(keyboardViewportRef.current)
+        // 微信在不同输入组件上有两种行为：有时 windowHeight 已经缩小，
+        // 有时仍保持全屏。固定工具栏只在未缩小时需要抬高键盘高度，
+        // 并且每次候选栏高度变化都重新计算，不能冻结第一次结果。
+        const reportedHeight = Math.max(0, Number(Taro.getWindowInfo().windowHeight) || 0)
+        const viewportAlreadyShrunk = reportedHeight > 0 && reportedHeight < windowHeightRef.current - 48
+        setKeyboardInset(viewportAlreadyShrunk ? 0 : nextHeight)
       } else {
         // 延迟确认真正收起，过滤焦点切换时的短暂 0 高度事件。
-        if (keyboardCloseTimerRef.current) clearTimeout(keyboardCloseTimerRef.current)
-        keyboardCloseTimerRef.current = setTimeout(() => {
-          keyboardCloseTimerRef.current = null
-          setKeyboardHeight(0)
-          keyboardViewportRef.current = 0
-          const reportedHeight = Math.max(0, Number(Taro.getWindowInfo().windowHeight) || 0)
-          const restoredHeight = Math.max(initialWindowHeightRef.current, reportedHeight)
-          initialWindowHeightRef.current = restoredHeight
-          setViewportHeight(restoredHeight)
-        }, 180)
+        clearKeyboardCloseTimer()
+        keyboardCloseTimerRef.current = setTimeout(resetKeyboardLayout, 120)
       }
     }
     Taro.onKeyboardHeightChange(listener)
     return () => {
       Taro.offKeyboardHeightChange(listener)
       if (keyboardCloseTimerRef.current) clearTimeout(keyboardCloseTimerRef.current)
+      if (dockInteractionTimerRef.current) clearTimeout(dockInteractionTimerRef.current)
     }
   }, [])
+
+  const keepKeyboardDocked = () => {
+    if (!keyboardCloseTimerRef.current) return
+    clearTimeout(keyboardCloseTimerRef.current)
+    keyboardCloseTimerRef.current = null
+  }
+
+  const scheduleKeyboardDockReset = () => {
+    // 点击工具栏会让原生 Editor 短暂触发 blur，但键盘并未真正关闭。
+    // 这种 blur 不能把工具栏送回屏幕底部，否则工具栏会落到键盘后面。
+    if (dockInteractionRef.current) return
+    if (keyboardCloseTimerRef.current) clearTimeout(keyboardCloseTimerRef.current)
+    keyboardCloseTimerRef.current = setTimeout(() => {
+      keyboardCloseTimerRef.current = null
+      setKeyboardHeight(0)
+      setKeyboardInset(0)
+      const reportedHeight = Math.max(0, Number(Taro.getWindowInfo().windowHeight) || 0)
+      if (reportedHeight > windowHeightRef.current) windowHeightRef.current = reportedHeight
+    }, 160)
+  }
+
+  const preserveDockDuringAction = () => {
+    keepKeyboardDocked()
+    dockInteractionRef.current = true
+    if (dockInteractionTimerRef.current) clearTimeout(dockInteractionTimerRef.current)
+    dockInteractionTimerRef.current = setTimeout(() => {
+      dockInteractionTimerRef.current = null
+      dockInteractionRef.current = false
+    }, 260)
+  }
+
+  const closeKeyboard = () => {
+    if (keyboardCloseTimerRef.current) clearTimeout(keyboardCloseTimerRef.current)
+    keyboardCloseTimerRef.current = null
+    setKeyboardHeight(0)
+    setKeyboardInset(0)
+    setFormatOpen(false)
+    editorRef.current?.blur()
+    Taro.hideKeyboard()
+  }
 
   const mapSignature = blocks.filter(block => block.type === 'mindMapBlock').map(block => block.mapId || block.id).join('|')
   useEffect(() => {
@@ -439,7 +472,7 @@ export default function DocumentPage() {
 
   const dockVisible = true
   const flowItems = documentFlow(blocks)
-  return <View className='document-page' style={{ height: `${viewportHeight}px` }}>
+  return <View className='document-page' style={{ paddingBottom: keyboardInset > 0 ? `${keyboardInset}px` : undefined }}>
     <Canvas id='kw-mindmap-preview-canvas' type='2d' className='mindmap-preview-canvas' />
     <View className='document-top'>
       <View className='document-top__type'>文</View>
@@ -451,7 +484,7 @@ export default function DocumentPage() {
     <ScrollView className='document-scroll' scrollY enhanced enableFlex scrollAnchoring showScrollbar={false}>
       <View className='document-paper'>
         <View className='document-title-wrap'>
-          <Textarea className='document-title' autoHeight adjustPosition={false} value={title} placeholder='无标题文档' maxlength={300} showConfirmBar={false} onFocus={() => setEditorActive(false)} onInput={event => setTitle(event.detail.value)} />
+          <Textarea className='document-title' autoHeight adjustPosition={false} value={title} placeholder='无标题文档' maxlength={300} showConfirmBar={false} onFocus={() => { keepKeyboardDocked(); setEditorActive(false) }} onBlur={scheduleKeyboardDockReset} onInput={event => setTitle(event.detail.value)} />
         </View>
         <View className='document-flow'>
           {flowItems.map((item, flowIndex) => {
@@ -466,10 +499,12 @@ export default function DocumentPage() {
               showImgResize
               onReady={() => editorReady(item.key, item.blocks)}
               onFocus={() => {
+                keepKeyboardDocked()
                 editorRef.current = editorRefs.current[item.key] || editorRef.current
                 activeInsertionIndexRef.current = item.start + item.count
                 setEditorActive(true)
               }}
+              onBlur={scheduleKeyboardDockReset}
               onInput={(event: any) => onEditorInput(item.start, item.count, event)}
               onStatusChange={(event: any) => setFormats(event.detail || {})}
             />
@@ -490,7 +525,8 @@ export default function DocumentPage() {
                       maxlength={2000}
                       showConfirmBar={false}
                       adjustPosition={false}
-                      onFocus={() => { activeInsertionIndexRef.current = item.index + 1; setEditorActive(true) }}
+                      onFocus={() => { keepKeyboardDocked(); activeInsertionIndexRef.current = item.index + 1; setEditorActive(true) }}
+                      onBlur={scheduleKeyboardDockReset}
                       onInput={event => updateTaskLine(item.index, lineIndex, event.detail.value)}
                     />
                   </View>
@@ -515,7 +551,7 @@ export default function DocumentPage() {
 
     {!dockVisible && !insertOpen && <View className='floating-insert' onClick={() => { setInsertOpen(true); setEditorActive(true) }}><View className='floating-insert__plus'>+</View><Text>插入内容</Text></View>}
 
-    {dockVisible && !insertOpen && <View className={`editor-dock ${keyboardHeight ? 'keyboard-open' : ''}`}>
+    {dockVisible && !insertOpen && <View className={`editor-dock ${keyboardHeight ? 'keyboard-open' : ''}`} style={{ bottom: keyboardInset > 0 ? `${keyboardInset}px` : '0px' }} onTouchStart={preserveDockDuringAction}>
       {formatOpen ? <ScrollView className='format-strip' scrollX showScrollbar={false}>
         <View className='format-strip__inner'>
           <View className='format-back' onClick={() => setFormatOpen(false)}>‹ 返回</View>
@@ -533,7 +569,7 @@ export default function DocumentPage() {
           <View className={colorOpen ? 'color-tool on' : 'color-tool'} onClick={() => setColorOpen(!colorOpen)}><Text style={{ background: formats.color || COLORS[0] }} /></View>
           <View onClick={() => editorRef.current?.undo()}>撤销</View>
           <View onClick={() => editorRef.current?.redo()}>重做</View>
-          {keyboardHeight > 0 && <View onClick={() => { editorRef.current?.blur(); Taro.hideKeyboard(); setFormatOpen(false) }}>收起</View>}
+          {keyboardHeight > 0 && <View onClick={closeKeyboard}>收起</View>}
         </View>
       </ScrollView> : <ScrollView className='editor-dock__scroll' scrollX showScrollbar={false}>
         <View className='editor-dock__inner'>

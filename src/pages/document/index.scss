@@ -288,7 +288,7 @@
 }
 
 .document-bottom-space.dock-visible {
-  height: 36px;
+  height: calc(148px + env(safe-area-inset-bottom));
 }
 
 .floating-insert {
@@ -322,10 +322,12 @@
 }
 
 .editor-dock {
-  position: relative;
+  position: fixed;
   z-index: 120;
+  right: 0;
+  left: 0;
+  bottom: 0;
   width: 100%;
-  flex: none;
   padding-bottom: env(safe-area-inset-bottom);
   background: rgba(255, 255, 255, .99);
   border-top: 1px solid #dfe5ed;
