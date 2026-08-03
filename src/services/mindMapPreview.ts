@@ -118,7 +118,8 @@ export async function renderMindMapPreview(item: MindMapItem, canvasNode?: any):
   const ys = rawNodes.map((node: any) => Number(node.position?.y) || 0)
   const minX = Math.min(...xs); const maxX = Math.max(...xs)
   const minY = Math.min(...ys); const maxY = Math.max(...ys)
-  const contentX = 38; const contentY = 82; const contentWidth = WIDTH - 76; const contentHeight = HEIGHT - 112
+  // 预览图顶部预留独立标题区，节点绝不与“思维导图”标题重叠。
+  const contentX = 38; const contentY = 112; const contentWidth = WIDTH - 76; const contentHeight = HEIGHT - 142
   const scale = Math.min(1, contentWidth / Math.max(300, maxX - minX + 250), contentHeight / Math.max(180, maxY - minY + 90))
   const positions: Record<string, { x: number; y: number; root: boolean; color: string }> = {}
 

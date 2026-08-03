@@ -204,21 +204,21 @@ export default function DocumentPage() {
         }
         setKeyboardHeight(nextHeight)
 
-        const baseline = initialWindowHeightRef.current
-        const reportedHeight = Math.max(0, Number(Taro.getWindowInfo().windowHeight) || 0)
-        const calculatedHeight = baseline - nextHeight
-        // 某些基础库的 windowHeight 已经扣除键盘，再减一次会产生大片空白。
-        // 两种口径取较大值，并且同一键盘会话只允许可视区保持或变大，
-        // 绝不因滚动和候选栏重复变小。
-        const candidate = Math.max(
-          320,
-          Math.min(baseline, Math.max(reportedHeight, calculatedHeight))
-        )
-        const stableViewport = keyboardViewportRef.current
-          ? Math.max(keyboardViewportRef.current, candidate)
-          : candidate
-        keyboardViewportRef.current = stableViewport
-        setViewportHeight(stableViewport)
+        // 同一次键盘会话只在第一个有效事件确定可视区。
+        // 后续的滚动、候选栏和焦点切换都不能再改变工具栏位置。
+        if (!keyboardViewportRef.current) {
+          const baseline = initialWindowHeightRef.current
+          const reportedHeight = Math.max(0, Number(Taro.getWindowInfo().windowHeight) || 0)
+          const reportedHasShrunk = reportedHeight > 0 && reportedHeight < baseline - 48
+          const calculatedHeight = baseline - nextHeight
+          // windowHeight 已经随键盘缩小时直接使用；仍是全屏值时才扣除键盘。
+          // 不能将未缩小的全屏高度当成可视区，否则工具栏会落到键盘后面。
+          keyboardViewportRef.current = Math.max(
+            320,
+            Math.min(baseline, reportedHasShrunk ? reportedHeight : calculatedHeight)
+          )
+        }
+        setViewportHeight(keyboardViewportRef.current)
       } else {
         // 延迟确认真正收起，过滤焦点切换时的短暂 0 高度事件。
         if (keyboardCloseTimerRef.current) clearTimeout(keyboardCloseTimerRef.current)
