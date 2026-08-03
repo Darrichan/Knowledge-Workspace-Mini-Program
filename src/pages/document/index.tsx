@@ -91,8 +91,6 @@ export default function DocumentPage() {
   const [insertOpen, setInsertOpen] = useState(false)
   const [panel, setPanel] = useState<'history' | 'share' | null>(null)
   const [keyboardHeight, setKeyboardHeight] = useState(0)
-  const [keyboardInset, setKeyboardInset] = useState(0)
-  const windowHeightRef = useRef(Taro.getWindowInfo().windowHeight)
   const keyboardCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dockInteractionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dockInteractionRef = useRef(false)
@@ -202,9 +200,6 @@ export default function DocumentPage() {
     const resetKeyboardLayout = () => {
       keyboardCloseTimerRef.current = null
       setKeyboardHeight(0)
-      setKeyboardInset(0)
-      const reportedHeight = Math.max(0, Number(Taro.getWindowInfo().windowHeight) || 0)
-      if (reportedHeight > windowHeightRef.current) windowHeightRef.current = reportedHeight
     }
 
     const listener = ({ height }: { height: number }) => {
@@ -212,13 +207,6 @@ export default function DocumentPage() {
       if (nextHeight > 0) {
         clearKeyboardCloseTimer()
         setKeyboardHeight(nextHeight)
-
-        // 微信在不同输入组件上有两种行为：有时 windowHeight 已经缩小，
-        // 有时仍保持全屏。固定工具栏只在未缩小时需要抬高键盘高度，
-        // 并且每次候选栏高度变化都重新计算，不能冻结第一次结果。
-        const reportedHeight = Math.max(0, Number(Taro.getWindowInfo().windowHeight) || 0)
-        const viewportAlreadyShrunk = reportedHeight > 0 && reportedHeight < windowHeightRef.current - 48
-        setKeyboardInset(viewportAlreadyShrunk ? 0 : nextHeight)
       } else {
         // 延迟确认真正收起，过滤焦点切换时的短暂 0 高度事件。
         clearKeyboardCloseTimer()
@@ -247,9 +235,6 @@ export default function DocumentPage() {
     keyboardCloseTimerRef.current = setTimeout(() => {
       keyboardCloseTimerRef.current = null
       setKeyboardHeight(0)
-      setKeyboardInset(0)
-      const reportedHeight = Math.max(0, Number(Taro.getWindowInfo().windowHeight) || 0)
-      if (reportedHeight > windowHeightRef.current) windowHeightRef.current = reportedHeight
     }, 160)
   }
 
@@ -267,7 +252,6 @@ export default function DocumentPage() {
     if (keyboardCloseTimerRef.current) clearTimeout(keyboardCloseTimerRef.current)
     keyboardCloseTimerRef.current = null
     setKeyboardHeight(0)
-    setKeyboardInset(0)
     setFormatOpen(false)
     editorRef.current?.blur()
     Taro.hideKeyboard()
@@ -472,7 +456,7 @@ export default function DocumentPage() {
 
   const dockVisible = true
   const flowItems = documentFlow(blocks)
-  return <View className='document-page' style={{ paddingBottom: keyboardInset > 0 ? `${keyboardInset}px` : undefined }}>
+  return <View className='document-page'>
     <Canvas id='kw-mindmap-preview-canvas' type='2d' className='mindmap-preview-canvas' />
     <View className='document-top'>
       <View className='document-top__type'>文</View>
@@ -551,7 +535,7 @@ export default function DocumentPage() {
 
     {!dockVisible && !insertOpen && <View className='floating-insert' onClick={() => { setInsertOpen(true); setEditorActive(true) }}><View className='floating-insert__plus'>+</View><Text>插入内容</Text></View>}
 
-    {dockVisible && !insertOpen && <View className={`editor-dock ${keyboardHeight ? 'keyboard-open' : ''}`} style={{ bottom: keyboardInset > 0 ? `${keyboardInset}px` : '0px' }} onTouchStart={preserveDockDuringAction}>
+    {dockVisible && !insertOpen && <View className={`editor-dock ${keyboardHeight ? 'keyboard-open' : ''}`} onTouchStart={preserveDockDuringAction}>
       {formatOpen ? <ScrollView className='format-strip' scrollX showScrollbar={false}>
         <View className='format-strip__inner'>
           <View className='format-back' onClick={() => setFormatOpen(false)}>‹ 返回</View>
