@@ -91,7 +91,13 @@ export default function DocumentPage() {
   const [insertOpen, setInsertOpen] = useState(false)
   const [panel, setPanel] = useState<'history' | 'share' | null>(null)
   const [keyboardHeight, setKeyboardHeight] = useState(0)
+  const [dockCorrection, setDockCorrection] = useState(0)
   const keyboardCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dockCalibrationTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  const keyboardHeightRef = useRef(0)
+  const dockCorrectionRef = useRef(0)
+  const stableWindowHeightRef = useRef(Math.max(0, Number(Taro.getWindowInfo().windowHeight) || 0))
+  const requestDockCalibrationRef = useRef<() => void>(() => {})
   const dockInteractionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dockInteractionRef = useRef(false)
   const [, setEditorActive] = useState(false)
@@ -191,6 +197,51 @@ export default function DocumentPage() {
   }, [title, blocks])
 
   useEffect(() => {
+    const clearDockCalibrationTimers = () => {
+      dockCalibrationTimersRef.current.forEach(timer => clearTimeout(timer))
+      dockCalibrationTimersRef.current = []
+    }
+
+    const updateDockCorrection = (nextCorrection: number) => {
+      const stableHeight = stableWindowHeightRef.current || 1
+      const safeCorrection = Math.max(-stableHeight, Math.min(stableHeight, nextCorrection))
+      if (Math.abs(safeCorrection - dockCorrectionRef.current) < .5) return
+      dockCorrectionRef.current = safeCorrection
+      setDockCorrection(safeCorrection)
+    }
+
+    const calibrateDock = (height: number) => {
+      if (height <= 0 || keyboardHeightRef.current <= 0) return
+      Taro.createSelectorQuery().select('#kw-editor-dock').boundingClientRect(rect => {
+        if (!rect || keyboardHeightRef.current <= 0) return
+        const dockHeight = Math.max(0, Number(rect.height) || 0)
+        const currentTop = Number(rect.top)
+        const stableHeight = stableWindowHeightRef.current
+        if (!stableHeight || !Number.isFinite(currentTop) || !dockHeight) return
+
+        // 中间段原生 Editor 获得焦点时，微信会把页面整体上移；
+        // fixed: bottom=0 也会跟着错位。用稳定视口高度和键盘
+        // 真实高度算出键盘上沿，再根据实际位置迭代校正。
+        const desiredTop = Math.max(0, stableHeight - height - dockHeight)
+        const delta = desiredTop - currentTop
+        if (Math.abs(delta) < .5) return
+        updateDockCorrection(dockCorrectionRef.current + delta)
+      }).exec()
+    }
+
+    const scheduleDockCalibration = (height: number) => {
+      clearDockCalibrationTimers()
+      // 原生 Editor 的自动上移和键盘高度事件不在同一帧，
+      // 需要覆盖初次弹起、输入法候选栏完成和页面平移收尾。
+      ;[0, 48, 120, 240, 420, 700].forEach(delay => {
+        dockCalibrationTimersRef.current.push(setTimeout(() => calibrateDock(height), delay))
+      })
+    }
+    requestDockCalibrationRef.current = () => {
+      const height = keyboardHeightRef.current
+      if (height > 0) scheduleDockCalibration(height)
+    }
+
     const clearKeyboardCloseTimer = () => {
       if (!keyboardCloseTimerRef.current) return
       clearTimeout(keyboardCloseTimerRef.current)
@@ -199,14 +250,22 @@ export default function DocumentPage() {
 
     const resetKeyboardLayout = () => {
       keyboardCloseTimerRef.current = null
+      keyboardHeightRef.current = 0
       setKeyboardHeight(0)
+      clearDockCalibrationTimers()
+      dockCorrectionRef.current = 0
+      setDockCorrection(0)
+      const currentHeight = Math.max(0, Number(Taro.getWindowInfo().windowHeight) || 0)
+      if (currentHeight > stableWindowHeightRef.current) stableWindowHeightRef.current = currentHeight
     }
 
     const listener = ({ height }: { height: number }) => {
       const nextHeight = Math.max(0, Number(height) || 0)
       if (nextHeight > 0) {
         clearKeyboardCloseTimer()
+        keyboardHeightRef.current = nextHeight
         setKeyboardHeight(nextHeight)
+        scheduleDockCalibration(nextHeight)
       } else {
         // 延迟确认真正收起，过滤焦点切换时的短暂 0 高度事件。
         clearKeyboardCloseTimer()
@@ -218,6 +277,8 @@ export default function DocumentPage() {
       Taro.offKeyboardHeightChange(listener)
       if (keyboardCloseTimerRef.current) clearTimeout(keyboardCloseTimerRef.current)
       if (dockInteractionTimerRef.current) clearTimeout(dockInteractionTimerRef.current)
+      clearDockCalibrationTimers()
+      requestDockCalibrationRef.current = () => {}
     }
   }, [])
 
@@ -251,7 +312,12 @@ export default function DocumentPage() {
   const closeKeyboard = () => {
     if (keyboardCloseTimerRef.current) clearTimeout(keyboardCloseTimerRef.current)
     keyboardCloseTimerRef.current = null
+    keyboardHeightRef.current = 0
     setKeyboardHeight(0)
+    dockCalibrationTimersRef.current.forEach(timer => clearTimeout(timer))
+    dockCalibrationTimersRef.current = []
+    dockCorrectionRef.current = 0
+    setDockCorrection(0)
     setFormatOpen(false)
     editorRef.current?.blur()
     Taro.hideKeyboard()
@@ -468,7 +534,7 @@ export default function DocumentPage() {
     <ScrollView className='document-scroll' scrollY enhanced enableFlex scrollAnchoring showScrollbar={false}>
       <View className='document-paper'>
         <View className='document-title-wrap'>
-          <Textarea className='document-title' autoHeight adjustPosition={false} value={title} placeholder='无标题文档' maxlength={300} showConfirmBar={false} onFocus={() => { keepKeyboardDocked(); setEditorActive(false) }} onBlur={scheduleKeyboardDockReset} onInput={event => setTitle(event.detail.value)} />
+          <Textarea className='document-title' autoHeight adjustPosition={false} value={title} placeholder='无标题文档' maxlength={300} showConfirmBar={false} onFocus={() => { keepKeyboardDocked(); setEditorActive(false); requestDockCalibrationRef.current() }} onBlur={scheduleKeyboardDockReset} onInput={event => setTitle(event.detail.value)} />
         </View>
         <View className='document-flow'>
           {flowItems.map((item, flowIndex) => {
@@ -487,6 +553,7 @@ export default function DocumentPage() {
                 editorRef.current = editorRefs.current[item.key] || editorRef.current
                 activeInsertionIndexRef.current = item.start + item.count
                 setEditorActive(true)
+                requestDockCalibrationRef.current()
               }}
               onBlur={scheduleKeyboardDockReset}
               onInput={(event: any) => onEditorInput(item.start, item.count, event)}
@@ -509,7 +576,7 @@ export default function DocumentPage() {
                       maxlength={2000}
                       showConfirmBar={false}
                       adjustPosition={false}
-                      onFocus={() => { keepKeyboardDocked(); activeInsertionIndexRef.current = item.index + 1; setEditorActive(true) }}
+                      onFocus={() => { keepKeyboardDocked(); activeInsertionIndexRef.current = item.index + 1; setEditorActive(true); requestDockCalibrationRef.current() }}
                       onBlur={scheduleKeyboardDockReset}
                       onInput={event => updateTaskLine(item.index, lineIndex, event.detail.value)}
                     />
@@ -535,7 +602,12 @@ export default function DocumentPage() {
 
     {!dockVisible && !insertOpen && <View className='floating-insert' onClick={() => { setInsertOpen(true); setEditorActive(true) }}><View className='floating-insert__plus'>+</View><Text>插入内容</Text></View>}
 
-    {dockVisible && !insertOpen && <View className={`editor-dock ${keyboardHeight ? 'keyboard-open' : ''}`} onTouchStart={preserveDockDuringAction}>
+    {dockVisible && !insertOpen && <View
+      id='kw-editor-dock'
+      className={`editor-dock ${keyboardHeight ? 'keyboard-open' : ''}`}
+      style={dockCorrection ? { transform: `translate3d(0, ${dockCorrection}px, 0)` } : undefined}
+      onTouchStart={preserveDockDuringAction}
+    >
       {formatOpen ? <ScrollView className='format-strip' scrollX showScrollbar={false}>
         <View className='format-strip__inner'>
           <View className='format-back' onClick={() => setFormatOpen(false)}>‹ 返回</View>
