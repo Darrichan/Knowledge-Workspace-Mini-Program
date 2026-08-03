@@ -167,7 +167,8 @@ export default function DocumentPage() {
 
   useEffect(() => {
     const listener = ({ height }: { height: number }) => {
-      const nextHeight = Math.max(0, Number(height) || 0)
+      const pixelRatio = Math.max(1, Number(Taro.getWindowInfo().pixelRatio) || 1)
+      const nextHeight = Math.max(0, Math.round((Number(height) || 0) / pixelRatio))
       setKeyboardHeight(nextHeight)
     }
     Taro.onKeyboardHeightChange(listener)
