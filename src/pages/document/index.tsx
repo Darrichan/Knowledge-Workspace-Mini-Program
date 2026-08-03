@@ -71,6 +71,7 @@ export default function DocumentPage() {
   const [keyboardHeight, setKeyboardHeight] = useState(0)
   const initialWindowHeightRef = useRef(Taro.getWindowInfo().windowHeight)
   const [viewportHeight, setViewportHeight] = useState(initialWindowHeightRef.current)
+  const keyboardViewportRef = useRef(0)
   const [, setEditorActive] = useState(false)
   const [formatOpen, setFormatOpen] = useState(false)
   const [formats, setFormats] = useState<Record<string, any>>({})
@@ -172,13 +173,25 @@ export default function DocumentPage() {
       const nextHeight = Math.max(0, Number(height) || 0)
       setKeyboardHeight(nextHeight)
       if (nextHeight > 0) {
-        // 禁止页面被键盘二次上推：根容器只占键盘上方的可视区域，
-        // 正文和工具栏在同一个 flex 布局中分配高度。
-        setViewportHeight(Math.max(260, initialWindowHeightRef.current - nextHeight))
+        // 同一次键盘会话里，候选栏、输入法工具条和焦点切换可能连续上报
+        // 不同高度。只在首次打开时确定可视区，避免页面被反复扣减后塌缩。
+        if (!keyboardViewportRef.current) {
+          const baseline = initialWindowHeightRef.current
+          const reportedHeight = Taro.getWindowInfo().windowHeight
+          const reportedHasShrunk = reportedHeight > 0 && reportedHeight < baseline - 48
+          const calculatedHeight = baseline - nextHeight
+          keyboardViewportRef.current = Math.max(
+            320,
+            Math.min(baseline, reportedHasShrunk ? reportedHeight : calculatedHeight)
+          )
+        }
+        setViewportHeight(keyboardViewportRef.current)
       } else {
-        const restoredHeight = Taro.getWindowInfo().windowHeight
-        if (restoredHeight > 0) initialWindowHeightRef.current = restoredHeight
-        setViewportHeight(restoredHeight || initialWindowHeightRef.current)
+        keyboardViewportRef.current = 0
+        const reportedHeight = Taro.getWindowInfo().windowHeight
+        const restoredHeight = Math.max(initialWindowHeightRef.current, reportedHeight || 0)
+        initialWindowHeightRef.current = restoredHeight
+        setViewportHeight(restoredHeight)
       }
     }
     Taro.onKeyboardHeightChange(listener)
@@ -393,7 +406,7 @@ export default function DocumentPage() {
       <View className='document-top__menu' onClick={openDocumentMenu}>•••</View>
     </View>
 
-    <ScrollView className='document-scroll' scrollY enhanced showScrollbar={false}>
+    <ScrollView className='document-scroll' scrollY enhanced enableFlex scrollAnchoring showScrollbar={false}>
       <View className='document-paper'>
         <View className='document-title-wrap'>
           <Textarea className='document-title' autoHeight adjustPosition={false} value={title} placeholder='无标题文档' maxlength={300} showConfirmBar={false} onFocus={() => setEditorActive(false)} onInput={event => setTitle(event.detail.value)} />
