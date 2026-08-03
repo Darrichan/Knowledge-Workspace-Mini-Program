@@ -327,7 +327,6 @@
 
 .format-strip {
   background: #fbfcfe;
-  border-bottom: 1px solid #edf0f4;
 }
 
 .editor-dock__inner,
@@ -340,7 +339,7 @@
 }
 
 .format-strip__inner {
-  height: 94px;
+  height: 112px;
 }
 
 .editor-dock__inner > view,
@@ -360,18 +359,24 @@
 }
 
 .format-strip__inner > view {
-  min-width: 88px;
-  height: 72px;
-  padding: 0 20px;
+  min-width: 106px;
+  height: 88px;
+  padding: 0 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: #50627a;
   background: #f2f5f8;
-  border-radius: 16px;
-  font-size: 29px;
-  font-weight: 750;
+  border-radius: 18px;
+  font-size: 32px;
+  font-weight: 800;
   white-space: nowrap;
+}
+
+.format-strip__inner > view.format-back {
+  min-width: 142px;
+  color: #fff;
+  background: #6488d3;
 }
 
 .editor-dock__inner > view.insert-tool {

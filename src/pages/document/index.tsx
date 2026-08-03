@@ -445,8 +445,9 @@ export default function DocumentPage() {
     {!dockVisible && !insertOpen && <View className='floating-insert' onClick={() => { setInsertOpen(true); setEditorActive(true) }}><View className='floating-insert__plus'>+</View><Text>插入内容</Text></View>}
 
     {dockVisible && !insertOpen && <View className={`editor-dock ${keyboardHeight ? 'keyboard-open' : ''}`}>
-      {formatOpen && <ScrollView className='format-strip' scrollX showScrollbar={false}>
+      {formatOpen ? <ScrollView className='format-strip' scrollX showScrollbar={false}>
         <View className='format-strip__inner'>
+          <View className='format-back' onClick={() => setFormatOpen(false)}>‹ 返回</View>
           <View onClick={() => setLineType('paragraph')}>正文</View>
           <View onClick={() => setLineType('heading', 1)}>H1</View>
           <View onClick={() => setLineType('heading', 2)}>H2</View>
@@ -463,8 +464,7 @@ export default function DocumentPage() {
           <View onClick={() => editorRef.current?.redo()}>重做</View>
           {keyboardHeight > 0 && <View onClick={() => { editorRef.current?.blur(); Taro.hideKeyboard(); setFormatOpen(false) }}>收起</View>}
         </View>
-      </ScrollView>}
-      <ScrollView className='editor-dock__scroll' scrollX showScrollbar={false}>
+      </ScrollView> : <ScrollView className='editor-dock__scroll' scrollX showScrollbar={false}>
         <View className='editor-dock__inner'>
           <View className='primary insert-tool' onClick={() => setInsertOpen(true)}>＋ 插入</View>
           <View className={formatOpen ? 'on' : ''} onClick={() => setFormatOpen(!formatOpen)}>格式</View>
@@ -473,7 +473,7 @@ export default function DocumentPage() {
           <View className={uploading ? 'disabled' : ''} onClick={chooseImage}>{uploading ? '上传中' : '图片'}</View>
           <View onClick={openMindMap}>导图</View>
         </View>
-      </ScrollView>
+      </ScrollView>}
     </View>}
 
     {colorOpen && <View className='color-mask' onClick={() => setColorOpen(false)} />}

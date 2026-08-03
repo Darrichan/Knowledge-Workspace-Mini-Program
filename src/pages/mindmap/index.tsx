@@ -15,6 +15,10 @@ const nodeWidth = (label: string, fontSize = 28, root = false) => {
   const padding = root ? 86 : 56
   return Math.round(Math.min(root ? 600 : 520, Math.max(root ? 270 : 150, textUnits(label) * fontSize + padding)))
 }
+const stateSignature = (rootLabel: string, nodes: MindMapNode[]) => JSON.stringify({
+  rootLabel,
+  nodes: nodes.map(node => ({ id: node.id, label: node.label, color: node.color, parent_id: node.parent_id || null, priority: node.priority ?? null, marker: node.marker ?? null, fontSize: node.fontSize || 28 }))
+})
 
 function documentNodes(content?: Record<string, any>) {
   return Array.isArray(content?.nodes) ? content.nodes.map((node: any) => ({ ...node, parent_id: node.parent_id || null })) : []
@@ -42,18 +46,21 @@ export default function MindMapPage() {
   const [rootId, setRootId] = useState('root'); const [rootLabel, setRootLabel] = useState(''); const [nodes, setNodes] = useState<MindMapNode[]>([])
   const [selectedId, setSelectedId] = useState('root'); const [status, setStatus] = useState('正在加载'); const [historyOpen, setHistoryOpen] = useState(false); const [documentPanel, setDocumentPanel] = useState(false); const [versions, setVersions] = useState<MindMapVersion[]>([])
   const [zoom, setZoom] = useState(.72)
-  const hydrated = useRef(false); const saving = useRef(false); const queued = useRef(false); const versionRef = useRef(1); const documentRef = useRef<DocumentItem | null>(null); const mapRef = useRef<MindMapItem | null>(null); const rootRef = useRef(''); const nodesRef = useRef<MindMapNode[]>([])
+  const hydrated = useRef(false); const saving = useRef(false); const queued = useRef(false); const versionRef = useRef(1); const documentRef = useRef<DocumentItem | null>(null); const mapRef = useRef<MindMapItem | null>(null); const rootRef = useRef(''); const nodesRef = useRef<MindMapNode[]>([]); const persistedSignatureRef = useRef('')
   const pinchRef = useRef<{ distance: number; zoom: number } | null>(null); const zoomTouchedRef = useRef(false)
-  const hydrateDocument = (result: DocumentItem) => { setDocument(result); documentRef.current = result; setRootId('root'); setRootLabel(String(result.content?.root || result.title)); const next = documentNodes(result.content); setNodes(next); rootRef.current = String(result.content?.root || result.title); nodesRef.current = next; versionRef.current = result.version; setStatus(`版本 ${result.version}`) }
-  const hydrateMap = (item: MindMapItem) => { setMap(item); mapRef.current = item; const state = graphToState(item.graph, item.title); setRootId(state.rootId); setRootLabel(state.rootLabel); setNodes(state.nodes); rootRef.current = state.rootLabel; nodesRef.current = state.nodes; versionRef.current = item.version; setStatus(`导图版本 ${item.version}`) }
+  const hydrateDocument = (result: DocumentItem) => { setDocument(result); documentRef.current = result; setRootId('root'); setRootLabel(String(result.content?.root || result.title)); const next = documentNodes(result.content); setNodes(next); rootRef.current = String(result.content?.root || result.title); nodesRef.current = next; persistedSignatureRef.current = stateSignature(rootRef.current, next); versionRef.current = result.version; setStatus(`版本 ${result.version}`) }
+  const hydrateMap = (item: MindMapItem) => { setMap(item); mapRef.current = item; const state = graphToState(item.graph, item.title); setRootId(state.rootId); setRootLabel(state.rootLabel); setNodes(state.nodes); rootRef.current = state.rootLabel; nodesRef.current = state.nodes; persistedSignatureRef.current = stateSignature(state.rootLabel, state.nodes); versionRef.current = item.version; setStatus(`导图版本 ${item.version}`) }
   useLoad(async () => { if (!id) return; try { const doc = await documentApi.get(id); setDocument(doc); documentRef.current = doc; if (mapId) hydrateMap(await mindMapApi.get(id, mapId)); else hydrateDocument(doc); setTimeout(() => { hydrated.current = true }, 0) } catch (error) { Taro.showToast({ title: (error as Error).message, icon: 'none' }) } })
   const saveNow = async (reason = 'interval') => {
-    if (saving.current) { queued.current = true; return } saving.current = true; queued.current = false; const snapshotRoot = rootRef.current; const snapshotNodes = nodesRef.current
-    try { setStatus('保存中…'); if (mapId && mapRef.current) { const updated = await mindMapApi.update(id, mapId, { ...mapRef.current, title: snapshotRoot || '未命名思维导图', graph: stateToGraph(rootId, snapshotRoot, snapshotNodes), version: versionRef.current }, reason); hydrateMap(updated) } else if (documentRef.current) { const updated = await documentApi.update(id, versionRef.current, snapshotRoot || '无标题思维导图', { type: 'mindmap', root: snapshotRoot, nodes: snapshotNodes }, reason); hydrateDocument(updated) } }
+    if (saving.current) { queued.current = true; return }
+    const snapshotRoot = rootRef.current; const snapshotNodes = nodesRef.current; const snapshotSignature = stateSignature(snapshotRoot, snapshotNodes)
+    if (snapshotSignature === persistedSignatureRef.current) return
+    saving.current = true; queued.current = false
+    try { setStatus('保存中…'); if (mapId && mapRef.current) { const updated = await mindMapApi.update(id, mapId, { ...mapRef.current, title: snapshotRoot || '未命名思维导图', graph: stateToGraph(rootId, snapshotRoot, snapshotNodes), version: versionRef.current }, reason); setMap(updated); mapRef.current = updated; versionRef.current = updated.version; persistedSignatureRef.current = snapshotSignature; setStatus(`已自动保存 · 版本 ${updated.version}`) } else if (documentRef.current) { const updated = await documentApi.update(id, versionRef.current, snapshotRoot || '无标题思维导图', { type: 'mindmap', root: snapshotRoot, nodes: snapshotNodes }, reason); setDocument(updated); documentRef.current = updated; versionRef.current = updated.version; persistedSignatureRef.current = snapshotSignature; setStatus(`已自动保存 · 版本 ${updated.version}`) } }
     catch (error) { setStatus('保存失败'); Taro.showToast({ title: (error as Error).message, icon: 'none' }) }
-    finally { saving.current = false; if (queued.current || snapshotRoot !== rootRef.current || snapshotNodes !== nodesRef.current) setTimeout(() => saveNow(), 0) }
+    finally { saving.current = false; const currentSignature = stateSignature(rootRef.current, nodesRef.current); if ((queued.current || currentSignature !== snapshotSignature) && currentSignature !== persistedSignatureRef.current) setTimeout(() => saveNow(), 600) }
   }
-  useEffect(() => { rootRef.current = rootLabel; nodesRef.current = nodes; if (!hydrated.current) return; setStatus('有未保存更改'); const timer = setTimeout(() => saveNow(), 1000); return () => clearTimeout(timer) }, [rootLabel, nodes])
+  useEffect(() => { rootRef.current = rootLabel; nodesRef.current = nodes; if (!hydrated.current) return; const signature = stateSignature(rootLabel, nodes); if (signature === persistedSignatureRef.current) return; setStatus('有未保存更改'); const timer = setTimeout(() => saveNow(), 1000); return () => clearTimeout(timer) }, [rootLabel, nodes])
   const selected = nodes.find(node => node.id === selectedId)
   const depth = (node: MindMapNode): number => { const parent = nodes.find(item => item.id === node.parent_id); return parent ? 1 + depth(parent) : 1 }
   const ordered = useMemo(() => { const output: MindMapNode[] = []; const append = (parentId: string) => nodes.filter(node => (node.parent_id || rootId) === parentId).forEach(node => { output.push(node); append(node.id) }); append(rootId); return output }, [nodes, rootId])
