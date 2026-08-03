@@ -94,6 +94,7 @@ export default function DocumentPage() {
   const initialWindowHeightRef = useRef(Taro.getWindowInfo().windowHeight)
   const [viewportHeight, setViewportHeight] = useState(initialWindowHeightRef.current)
   const keyboardViewportRef = useRef(0)
+  const keyboardCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [, setEditorActive] = useState(false)
   const [formatOpen, setFormatOpen] = useState(false)
   const [formats, setFormats] = useState<Record<string, any>>({})
@@ -193,31 +194,50 @@ export default function DocumentPage() {
   useEffect(() => {
     const listener = ({ height }: { height: number }) => {
       const nextHeight = Math.max(0, Number(height) || 0)
-      setKeyboardHeight(nextHeight)
       if (nextHeight > 0) {
-        // 同一次键盘会话里，候选栏、输入法工具条和焦点切换可能连续上报
-        // 不同高度。只在首次打开时确定可视区，避免页面被反复扣减后塌缩。
-        if (!keyboardViewportRef.current) {
-          const baseline = initialWindowHeightRef.current
-          const reportedHeight = Taro.getWindowInfo().windowHeight
-          const reportedHasShrunk = reportedHeight > 0 && reportedHeight < baseline - 48
-          const calculatedHeight = baseline - nextHeight
-          keyboardViewportRef.current = Math.max(
-            320,
-            Math.min(baseline, reportedHasShrunk ? reportedHeight : calculatedHeight)
-          )
+        // 光标在 Editor、Textarea 之间切换时，微信会短暂上报 0，
+        // 还会因候选栏变化重复上报高度。只要键盘重新出现就取消关闭，
+        // 避免把同一次输入误判为多次会话。
+        if (keyboardCloseTimerRef.current) {
+          clearTimeout(keyboardCloseTimerRef.current)
+          keyboardCloseTimerRef.current = null
         }
-        setViewportHeight(keyboardViewportRef.current)
+        setKeyboardHeight(nextHeight)
+
+        const baseline = initialWindowHeightRef.current
+        const reportedHeight = Math.max(0, Number(Taro.getWindowInfo().windowHeight) || 0)
+        const calculatedHeight = baseline - nextHeight
+        // 某些基础库的 windowHeight 已经扣除键盘，再减一次会产生大片空白。
+        // 两种口径取较大值，并且同一键盘会话只允许可视区保持或变大，
+        // 绝不因滚动和候选栏重复变小。
+        const candidate = Math.max(
+          320,
+          Math.min(baseline, Math.max(reportedHeight, calculatedHeight))
+        )
+        const stableViewport = keyboardViewportRef.current
+          ? Math.max(keyboardViewportRef.current, candidate)
+          : candidate
+        keyboardViewportRef.current = stableViewport
+        setViewportHeight(stableViewport)
       } else {
-        keyboardViewportRef.current = 0
-        const reportedHeight = Taro.getWindowInfo().windowHeight
-        const restoredHeight = Math.max(initialWindowHeightRef.current, reportedHeight || 0)
-        initialWindowHeightRef.current = restoredHeight
-        setViewportHeight(restoredHeight)
+        // 延迟确认真正收起，过滤焦点切换时的短暂 0 高度事件。
+        if (keyboardCloseTimerRef.current) clearTimeout(keyboardCloseTimerRef.current)
+        keyboardCloseTimerRef.current = setTimeout(() => {
+          keyboardCloseTimerRef.current = null
+          setKeyboardHeight(0)
+          keyboardViewportRef.current = 0
+          const reportedHeight = Math.max(0, Number(Taro.getWindowInfo().windowHeight) || 0)
+          const restoredHeight = Math.max(initialWindowHeightRef.current, reportedHeight)
+          initialWindowHeightRef.current = restoredHeight
+          setViewportHeight(restoredHeight)
+        }, 180)
       }
     }
     Taro.onKeyboardHeightChange(listener)
-    return () => Taro.offKeyboardHeightChange(listener)
+    return () => {
+      Taro.offKeyboardHeightChange(listener)
+      if (keyboardCloseTimerRef.current) clearTimeout(keyboardCloseTimerRef.current)
+    }
   }, [])
 
   const mapSignature = blocks.filter(block => block.type === 'mindMapBlock').map(block => block.mapId || block.id).join('|')
