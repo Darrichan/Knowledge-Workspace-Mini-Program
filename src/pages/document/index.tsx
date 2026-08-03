@@ -166,7 +166,10 @@ export default function DocumentPage() {
   }, [title, blocks])
 
   useEffect(() => {
-    const listener = ({ height }: { height: number }) => setKeyboardHeight(Math.max(0, height || 0))
+    const listener = ({ height }: { height: number }) => {
+      const nextHeight = Math.max(0, Number(height) || 0)
+      setKeyboardHeight(nextHeight)
+    }
     Taro.onKeyboardHeightChange(listener)
     return () => Taro.offKeyboardHeightChange(listener)
   }, [])
@@ -444,7 +447,7 @@ export default function DocumentPage() {
 
     {!dockVisible && !insertOpen && <View className='floating-insert' onClick={() => { setInsertOpen(true); setEditorActive(true) }}><View className='floating-insert__plus'>+</View><Text>插入内容</Text></View>}
 
-    {dockVisible && !insertOpen && <View className={`editor-dock ${keyboardHeight ? 'keyboard-open' : ''}`}>
+    {dockVisible && !insertOpen && <View className={`editor-dock ${keyboardHeight ? 'keyboard-open' : ''}`} style={`bottom:${keyboardHeight > 0 ? `${keyboardHeight}px` : '0px'}`}>
       {formatOpen ? <ScrollView className='format-strip' scrollX showScrollbar={false}>
         <View className='format-strip__inner'>
           <View className='format-back' onClick={() => setFormatOpen(false)}>‹ 返回</View>
