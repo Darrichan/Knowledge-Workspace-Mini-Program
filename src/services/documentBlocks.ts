@@ -26,7 +26,7 @@ const makeId = () => `${Date.now().toString(36)}-${Math.random().toString(36).sl
 export function createBlock(type: BlockType = 'paragraph'): DocumentBlock {
   if (type === 'heading') return { id: makeId(), type, text: '', level: 2 }
   if (type === 'codeBlock') return { id: makeId(), type, text: '', language: 'plaintext' }
-  if (type === 'taskList') return { id: makeId(), type, text: '待办事项', checkedLines: [false] }
+  if (type === 'taskList') return { id: makeId(), type, text: '', checkedLines: [false] }
   if (type === 'horizontalRule') return { id: makeId(), type }
   return { id: makeId(), type, text: '' }
 }

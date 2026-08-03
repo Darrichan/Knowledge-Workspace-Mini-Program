@@ -37,7 +37,12 @@ const documentFlow = (blocks: DocumentBlock[]): DocumentFlowItem[] => {
   let segmentIndex = 0
   const flush = () => {
     if (!segmentBlocks.length) return
-    output.push({ kind: 'editor', key: `editor-${segmentIndex++}`, start: segmentStart, count: segmentBlocks.length, blocks: segmentBlocks })
+    const hasVisibleContent = segmentBlocks.some(block => {
+      if (block.type === 'image') return Boolean(block.src || block.thumbnail)
+      if (block.type === 'horizontalRule') return true
+      return Boolean((block.text || '').trim())
+    })
+    if (hasVisibleContent) output.push({ kind: 'editor', key: `editor-${segmentIndex++}`, start: segmentStart, count: segmentBlocks.length, blocks: segmentBlocks })
     segmentBlocks = []
   }
   blocks.forEach((block, index) => {
@@ -51,7 +56,7 @@ const documentFlow = (blocks: DocumentBlock[]): DocumentFlowItem[] => {
     }
   })
   flush()
-  if (!output.some(item => item.kind === 'editor')) output.push({ kind: 'editor', key: `editor-${segmentIndex}`, start: blocks.length, count: 0, blocks: [] })
+  if (!output.length || output[output.length - 1].kind !== 'editor') output.push({ kind: 'editor', key: `editor-${segmentIndex}`, start: blocks.length, count: 0, blocks: [] })
   return output
 }
 
@@ -85,7 +90,6 @@ export default function DocumentPage() {
   const savingRef = useRef(false)
   const queuedRef = useRef(false)
   const previewCanvasRef = useRef<any>(null)
-  const pixelRatioRef = useRef(Math.max(1, Taro.getWindowInfo().pixelRatio || 1))
 
   const getPreviewCanvas = async () => {
     if (previewCanvasRef.current) return previewCanvasRef.current
@@ -222,7 +226,7 @@ export default function DocumentPage() {
     if (type === 'taskList') {
       const next = [...blocksRef.current]
       const index = Math.min(next.length, Math.max(0, activeInsertionIndexRef.current))
-      next.splice(index, 0, { id: `${Date.now()}-task`, type: 'taskList', text: '待办事项', checkedLines: [false] })
+      next.splice(index, 0, { id: `${Date.now()}-task`, type: 'taskList', text: '', checkedLines: [false] })
       blocksRef.current = next
       setBlocks(next)
       setInsertOpen(false)
@@ -365,7 +369,6 @@ export default function DocumentPage() {
   if (!document) return <View className='loading-screen'><View className='loading-ring' /><Text>正在打开内容</Text></View>
 
   const dockVisible = true
-  const keyboardOffset = keyboardHeight > 0 ? Math.round(keyboardHeight / pixelRatioRef.current) : 0
   const flowItems = documentFlow(blocks)
   return <View className='document-page'>
     <Canvas id='kw-mindmap-preview-canvas' type='2d' className='mindmap-preview-canvas' />
@@ -401,7 +404,7 @@ export default function DocumentPage() {
               onStatusChange={(event: any) => setFormats(event.detail || {})}
             />
             if (item.kind === 'task') {
-              const lines = (item.block.text || '待办事项').split('\n')
+              const lines = typeof item.block.text === 'string' ? item.block.text.split('\n') : ['']
               return <View key={item.key} className='task-block'>
                 {lines.map((line, lineIndex) => {
                   const checked = Boolean(item.block.checkedLines?.[lineIndex])
@@ -413,6 +416,7 @@ export default function DocumentPage() {
                       className='task-text'
                       autoHeight
                       value={line}
+                      placeholder='输入待办事项'
                       maxlength={2000}
                       showConfirmBar={false}
                       onFocus={() => { activeInsertionIndexRef.current = item.index + 1; setEditorActive(true) }}
@@ -425,7 +429,7 @@ export default function DocumentPage() {
             const preview = mapPreviews[item.block.mapId || item.block.id]
             return <View key={item.key} className='mindmap-interactive' hoverClass='mindmap-interactive--pressed' onClick={() => openMindMapBlock(item.block)}>
               {preview
-                ? <Image className='mindmap-interactive__image' src={preview} mode='widthFix' />
+                ? <Image className='mindmap-interactive__image' src={preview} mode='aspectFit' />
                 : <View className='mindmap-interactive__fallback'><View className='mindmap-interactive__root'>{item.block.previewLabels?.[0] || '中心主题'}</View></View>}
               <View className='mindmap-interactive__bar'>
                 <View><Text className='mindmap-interactive__title'>{item.block.title || '未命名思维导图'}</Text><Text className='mindmap-interactive__meta'>{item.block.nodeCount || 1} 个主题</Text></View>
@@ -440,13 +444,14 @@ export default function DocumentPage() {
 
     {!dockVisible && !insertOpen && <View className='floating-insert' onClick={() => { setInsertOpen(true); setEditorActive(true) }}><View className='floating-insert__plus'>+</View><Text>插入内容</Text></View>}
 
-    {dockVisible && !insertOpen && <View className={`editor-dock ${keyboardHeight ? 'keyboard-open' : ''}`} style={{ bottom: `${keyboardOffset}px` }}>
+    {dockVisible && !insertOpen && <View className={`editor-dock ${keyboardHeight ? 'keyboard-open' : ''}`}>
       {formatOpen && <ScrollView className='format-strip' scrollX showScrollbar={false}>
         <View className='format-strip__inner'>
           <View onClick={() => setLineType('paragraph')}>正文</View>
           <View onClick={() => setLineType('heading', 1)}>H1</View>
           <View onClick={() => setLineType('heading', 2)}>H2</View>
           <View onClick={() => setLineType('heading', 3)}>H3</View>
+          <View className={formats.bold ? 'on strong' : 'strong'} onClick={() => applyFormat('bold')}>加粗</View>
           <View className={formats.list === 'check' ? 'on' : ''} onClick={() => setLineType('taskList')}>待办</View>
           <View onClick={() => setLineType('orderedList')}>编号</View>
           <View className={formats.list === 'bullet' ? 'on' : ''} onClick={() => setLineType('bulletList')}>列表</View>
@@ -461,14 +466,12 @@ export default function DocumentPage() {
       </ScrollView>}
       <ScrollView className='editor-dock__scroll' scrollX showScrollbar={false}>
         <View className='editor-dock__inner'>
-          <View className='primary compact' onClick={() => setInsertOpen(true)}>+</View>
-          <View className={formats.header ? 'on' : ''} onClick={() => setLineType('paragraph')}>正文</View>
-          <View className={formats.bold ? 'on strong' : 'strong'} onClick={() => applyFormat('bold')}>B</View>
+          <View className='primary insert-tool' onClick={() => setInsertOpen(true)}>＋ 插入</View>
+          <View className={formatOpen ? 'on' : ''} onClick={() => setFormatOpen(!formatOpen)}>格式</View>
           <View className={formats.list === 'bullet' ? 'on' : ''} onClick={() => setLineType('bulletList')}>列表</View>
           <View className={formats.list === 'check' ? 'on' : ''} onClick={() => setLineType('taskList')}>待办</View>
           <View className={uploading ? 'disabled' : ''} onClick={chooseImage}>{uploading ? '上传中' : '图片'}</View>
           <View onClick={openMindMap}>导图</View>
-          <View className={formatOpen ? 'on' : ''} onClick={() => setFormatOpen(!formatOpen)}>更多</View>
         </View>
       </ScrollView>
     </View>}
