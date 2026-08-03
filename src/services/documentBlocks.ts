@@ -66,6 +66,15 @@ export function contentToBlocks(content?: Record<string, any>): DocumentBlock[] 
       if (bullet) return { ...base, type: 'bulletList', text: bullet[1] }
       const ordered = text.match(/^\d+[.)]\s+(.+)$/)
       if (ordered) return { ...base, type: 'orderedList', text: ordered[1] }
+      if (style.url?.startsWith('kw-mindmap://')) {
+        return {
+          ...base,
+          type: 'mindMapBlock',
+          mapId: style.url.slice('kw-mindmap://'.length),
+          title: text.replace(/^↗?\s*思维导图\s*·\s*/, '') || '未命名思维导图',
+          nodeCount: 1
+        }
+      }
       return { ...base, type: style.url ? 'link' : 'paragraph', text, url: style.url }
     }
     if (node.type === 'heading') return { ...base, type: 'heading', text: textOf(node), level: Number(node.attrs?.level || 2) }

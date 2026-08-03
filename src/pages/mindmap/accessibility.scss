@@ -1,0 +1,10 @@
+/* 真机上保证底部工具栏的文字和点击热区足够清晰。 */
+.node-stylebar text {
+  font-size: 22px;
+}
+
+.node-stylebar view {
+  min-width: 54px;
+  height: 52px;
+  font-size: 22px;
+}
