@@ -34,7 +34,7 @@ export default function DocumentPage() {
   const [insertOpen, setInsertOpen] = useState(false)
   const [panel, setPanel] = useState<'history' | 'share' | null>(null)
   const [keyboardHeight, setKeyboardHeight] = useState(0)
-  const [editorActive, setEditorActive] = useState(false)
+  const [, setEditorActive] = useState(false)
   const [formatOpen, setFormatOpen] = useState(false)
   const [formats, setFormats] = useState<Record<string, any>>({})
   const [uploading, setUploading] = useState(false)
@@ -52,6 +52,7 @@ export default function DocumentPage() {
   const savingRef = useRef(false)
   const queuedRef = useRef(false)
   const previewCanvasRef = useRef<any>(null)
+  const pixelRatioRef = useRef(Math.max(1, Taro.getWindowInfo().pixelRatio || 1))
 
   const getPreviewCanvas = async () => {
     if (previewCanvasRef.current) return previewCanvasRef.current
@@ -189,10 +190,11 @@ export default function DocumentPage() {
       editorRef.current.format('list', '')
       setTimeout(() => editorRef.current?.format('list', 'ordered'), 0)
     } else if (type === 'taskList') {
-      // WeChat Editor does not reliably replace an existing bullet list in one call.
-      // Clear the current line format first, then apply its native checklist format.
+      // iOS WeChat currently renders the native `check` list as a bullet in some
+      // versions. Insert an editable checkbox glyph instead so the document keeps
+      // task semantics without showing a misleading unordered-list marker.
       editorRef.current.format('list', '')
-      setTimeout(() => editorRef.current?.format('list', 'check'), 0)
+      setTimeout(() => editorRef.current?.insertText({ text: '☐ ' }), 0)
     }
     else if (type === 'blockquote') editorRef.current.format('blockquote', 'true')
     else if (type === 'codeBlock') {
@@ -286,7 +288,8 @@ export default function DocumentPage() {
 
   if (!document) return <View className='loading-screen'><View className='loading-ring' /><Text>正在打开内容</Text></View>
 
-  const dockVisible = editorActive || keyboardHeight > 0
+  const dockVisible = true
+  const keyboardOffset = keyboardHeight > 0 ? Math.round(keyboardHeight / pixelRatioRef.current) : 0
   return <View className='document-page'>
     <Canvas id='kw-mindmap-preview-canvas' type='2d' className='mindmap-preview-canvas' />
     <View className='document-top'>
@@ -319,7 +322,7 @@ export default function DocumentPage() {
 
     {!dockVisible && !insertOpen && <View className='floating-insert' onClick={() => { setInsertOpen(true); setEditorActive(true) }}><View className='floating-insert__plus'>+</View><Text>插入内容</Text></View>}
 
-    {dockVisible && !insertOpen && <View className={`editor-dock ${keyboardHeight ? 'keyboard-open' : ''}`}>
+    {dockVisible && !insertOpen && <View className={`editor-dock ${keyboardHeight ? 'keyboard-open' : ''}`} style={{ bottom: `${keyboardOffset}px` }}>
       {formatOpen && <ScrollView className='format-strip' scrollX showScrollbar={false}>
         <View className='format-strip__inner'>
           <View onClick={() => setLineType('paragraph')}>正文</View>

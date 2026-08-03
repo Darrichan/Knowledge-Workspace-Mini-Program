@@ -29,7 +29,7 @@
   color: #5b7fc8;
   background: #eef4ff;
   border-radius: 11px;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 800;
 }
 
@@ -40,7 +40,7 @@
   color: #8a98aa;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .document-top__action {
@@ -48,7 +48,7 @@
   color: #5578bd;
   background: #eef4ff;
   border-radius: 13px;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 700;
 }
 
@@ -78,7 +78,7 @@
   min-height: 52px;
   padding: 0;
   color: #17253a;
-  font-size: 40px;
+  font-size: 44px;
   font-weight: 800;
   line-height: 1.28;
 }
@@ -89,14 +89,14 @@
   padding: 4px 0 96px;
   color: #33445a;
   background: transparent;
-  font-size: 24px;
+  font-size: 28px;
   line-height: 1.72;
   box-sizing: border-box;
 }
 
 .document-editor::before {
   color: #a0abba;
-  font-size: 24px;
+  font-size: 28px;
 }
 
 .document-editor image,
@@ -201,7 +201,7 @@
   color: #50627a;
   background: #f2f5f8;
   border-radius: 9px;
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -323,7 +323,7 @@
 
 @media (max-width: 360px) {
   .document-paper { padding: 0 20px; }
-  .document-title { font-size: 38px; }
+  .document-title { font-size: 42px; }
   .document-editor,
-  .document-editor::before { font-size: 23px; }
+  .document-editor::before { font-size: 27px; }
 }

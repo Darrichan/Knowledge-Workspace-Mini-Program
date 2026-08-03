@@ -28,11 +28,11 @@ const inlineAttributes = (block: DocumentBlock) => ({
   ...(block.type === 'link' && block.url ? { link: block.url } : {})
 })
 
-const lineAttributes = (block: DocumentBlock, checked = false) => {
+const lineAttributes = (block: DocumentBlock) => {
   if (block.type === 'heading') return { header: Math.min(6, Math.max(1, block.level || 2)) }
   if (block.type === 'bulletList') return { list: 'bullet' }
   if (block.type === 'orderedList') return { list: 'ordered' }
-  if (block.type === 'taskList') return { list: 'check', checked }
+  if (block.type === 'taskList') return {}
   if (block.type === 'blockquote') return { blockquote: true }
   if (block.type === 'codeBlock') return { 'code-block': block.language || true }
   return {}
@@ -78,8 +78,9 @@ export async function blocksToEditorDelta(
 
     const lines = (block.text || '').split('\n')
     lines.forEach((line, index) => {
-      if (line) ops.push({ insert: line, attributes: inlineAttributes(block) })
-      ops.push({ insert: '\n', attributes: lineAttributes(block, Boolean(block.checkedLines?.[index])) })
+      const visibleLine = block.type === 'taskList' ? `${block.checkedLines?.[index] ? '☑' : '☐'} ${line}` : line
+      if (visibleLine) ops.push({ insert: visibleLine, attributes: inlineAttributes(block) })
+      ops.push({ insert: '\n', attributes: lineAttributes(block) })
     })
   }
 
@@ -90,6 +91,17 @@ export async function blocksToEditorDelta(
 const makeId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 
 function blockFromLine(text: string, inline: Record<string, any>, line: Record<string, any>): DocumentBlock {
+  const taskMatch = text.match(/^([☐☑])\s*(.*)$/s)
+  if (taskMatch) {
+    return {
+      id: makeId(), type: 'taskList', text: taskMatch[2],
+      checkedLines: [taskMatch[1] === '☑'],
+      ...(inline.bold ? { bold: true } : {}),
+      ...(inline.italic ? { italic: true } : {}),
+      ...(inline.underline ? { underline: true } : {}),
+      ...(inline.color ? { color: inline.color } : {})
+    }
+  }
   const base: DocumentBlock = {
     id: makeId(),
     type: 'paragraph',

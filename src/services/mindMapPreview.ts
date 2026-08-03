@@ -107,11 +107,11 @@ export async function renderMindMapPreview(item: MindMapItem, canvasNode?: any):
 
   const graphNodes = Array.isArray(item.graph?.nodes) ? item.graph.nodes : []
   ctx.fillStyle = '#24344a'
-  ctx.font = '700 24px sans-serif'
+  ctx.font = '700 30px sans-serif'
   ctx.fillText('思维导图', 28, 39)
   ctx.fillStyle = '#8090a6'
-  ctx.font = '18px sans-serif'
-  ctx.fillText(`${graphNodes.length || 1} 个主题 · 点击“导图”进入编辑`, 150, 38)
+  ctx.font = '22px sans-serif'
+  ctx.fillText(`${graphNodes.length || 1} 个主题 · 点击“导图”进入编辑`, 172, 38)
 
   const rawNodes = graphNodes.length ? graphNodes : [{ id: 'root', type: 'root', position: { x: 0, y: 0 }, data: { label: item.title || '中心主题' } }]
   const xs = rawNodes.map((node: any) => Number(node.position?.x) || 0)
@@ -152,8 +152,8 @@ export async function renderMindMapPreview(item: MindMapItem, canvasNode?: any):
     const position = positions[String(node.id)]
     if (!position) return
     const text = labelOf(node)
-    const width = position.root ? 176 : clamp(62 + Array.from(text).length * 15, 116, 205)
-    const height = position.root ? 76 : 48
+    const width = position.root ? 196 : clamp(72 + Array.from(text).length * 18, 132, 228)
+    const height = position.root ? 82 : 56
     roundedRect(ctx, position.x, position.y, width, height, position.root ? 18 : 11)
     ctx.fillStyle = position.root ? '#607fd0' : 'rgba(255,255,255,.96)'
     ctx.fill()
@@ -165,7 +165,7 @@ export async function renderMindMapPreview(item: MindMapItem, canvasNode?: any):
       ctx.fillRect(position.x + 12, position.y + height - 5, width - 24, 4)
     }
     ctx.fillStyle = position.root ? '#fff' : '#26364b'
-    ctx.font = position.root ? '700 21px sans-serif' : '600 17px sans-serif'
+    ctx.font = position.root ? '700 28px sans-serif' : '600 22px sans-serif'
     ctx.textBaseline = 'middle'
     ctx.fillText(shorten(ctx, text, width - 24), position.x + 12, position.y + height / 2)
   })
