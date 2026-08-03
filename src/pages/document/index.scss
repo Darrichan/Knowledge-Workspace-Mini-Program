@@ -96,6 +96,7 @@
   width: 100%;
   min-height: 88px;
   padding: 4px 0 20px;
+  overflow: visible;
   color: #33445a;
   background: transparent;
   font-size: 28px;
@@ -109,6 +110,7 @@
 
 .document-editor--segment {
   min-height: 88px;
+  overflow: visible;
 }
 
 .document-editor--last {
@@ -118,6 +120,13 @@
 .document-editor::before {
   color: #a0abba;
   font-size: 28px;
+}
+
+.document-editor .ql-container,
+.document-editor .ql-editor {
+  height: auto !important;
+  min-height: 100%;
+  overflow: visible !important;
 }
 
 .document-editor image,
@@ -362,7 +371,7 @@
   color: #50627a;
   background: #f2f5f8;
   border-radius: 18px;
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 800;
   white-space: nowrap;
 }
@@ -377,7 +386,7 @@
   color: #50627a;
   background: #f2f5f8;
   border-radius: 18px;
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 800;
   white-space: nowrap;
 }
@@ -391,7 +400,7 @@
 .editor-dock__inner > view.insert-tool {
   min-width: 152px;
   padding: 0 28px;
-  font-size: 32px;
+  font-size: 29px;
   font-weight: 800;
 }
 

@@ -60,6 +60,28 @@ const documentFlow = (blocks: DocumentBlock[]): DocumentFlowItem[] => {
   return output
 }
 
+const wrappedLineCount = (text = '', charactersPerLine = 21) => {
+  const lines = text.split('\n')
+  return lines.reduce((total, line) => total + Math.max(1, Math.ceil(Array.from(line).length / charactersPerLine)), 0)
+}
+
+// 微信原生 Editor 默认会形成独立滚动区。按内容预留完整高度，避免正文段
+// 与页面最外层 ScrollView 同时滚动。图片没有服务端尺寸时按文档栏宽度估算。
+const editorHeightRpx = (segmentBlocks: DocumentBlock[]) => {
+  if (!segmentBlocks.length) return 180
+  const contentHeight = segmentBlocks.reduce((total, block) => {
+    if (block.type === 'image') return total + 620
+    if (block.type === 'horizontalRule') return total + 72
+    const visualLines = wrappedLineCount(block.text || '', block.type === 'codeBlock' ? 18 : 21)
+    if (block.type === 'heading') return total + Math.max(76, visualLines * 70)
+    if (block.type === 'codeBlock') return total + Math.max(72, visualLines * 52) + 24
+    if (block.type === 'blockquote') return total + Math.max(62, visualLines * 54) + 20
+    if (block.type === 'bulletList' || block.type === 'orderedList') return total + Math.max(58, visualLines * 56)
+    return total + Math.max(58, visualLines * 54)
+  }, 0)
+  return Math.max(180, contentHeight + 64)
+}
+
 export default function DocumentPage() {
   const id = useRouter().params.id || ''
   const [document, setDocument] = useState<DocumentItem | null>(null)
@@ -417,6 +439,7 @@ export default function DocumentPage() {
               key={item.key}
               id={`kw-document-${item.key}`}
               className={`document-editor document-editor--segment ${flowIndex === flowItems.length - 1 ? 'document-editor--last' : ''}`}
+              style={{ height: `${editorHeightRpx(item.blocks)}rpx` }}
               placeholder={flowIndex === flowItems.length - 1 ? '输入正文…' : ''}
               showImgSize
               showImgToolbar
