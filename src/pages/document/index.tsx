@@ -182,9 +182,18 @@ export default function DocumentPage() {
       editorRef.current.format('list', '')
       editorRef.current.format('blockquote', '')
     } else if (type === 'heading') editorRef.current.format('header', `H${level}`)
-    else if (type === 'bulletList') editorRef.current.format('list', 'bullet')
-    else if (type === 'orderedList') editorRef.current.format('list', 'ordered')
-    else if (type === 'taskList') editorRef.current.format('list', 'check')
+    else if (type === 'bulletList') {
+      editorRef.current.format('list', '')
+      setTimeout(() => editorRef.current?.format('list', 'bullet'), 0)
+    } else if (type === 'orderedList') {
+      editorRef.current.format('list', '')
+      setTimeout(() => editorRef.current?.format('list', 'ordered'), 0)
+    } else if (type === 'taskList') {
+      // WeChat Editor does not reliably replace an existing bullet list in one call.
+      // Clear the current line format first, then apply its native checklist format.
+      editorRef.current.format('list', '')
+      setTimeout(() => editorRef.current?.format('list', 'check'), 0)
+    }
     else if (type === 'blockquote') editorRef.current.format('blockquote', 'true')
     else if (type === 'codeBlock') {
       editorRef.current.format('fontFamily', 'monospace')
@@ -310,16 +319,16 @@ export default function DocumentPage() {
 
     {!dockVisible && !insertOpen && <View className='floating-insert' onClick={() => { setInsertOpen(true); setEditorActive(true) }}><View className='floating-insert__plus'>+</View><Text>插入内容</Text></View>}
 
-    {dockVisible && !insertOpen && <View className={`editor-dock ${keyboardHeight ? 'keyboard-open' : ''}`} style={{ bottom: `${keyboardHeight}px` }}>
+    {dockVisible && !insertOpen && <View className={`editor-dock ${keyboardHeight ? 'keyboard-open' : ''}`}>
       {formatOpen && <ScrollView className='format-strip' scrollX showScrollbar={false}>
         <View className='format-strip__inner'>
           <View onClick={() => setLineType('paragraph')}>正文</View>
           <View onClick={() => setLineType('heading', 1)}>H1</View>
           <View onClick={() => setLineType('heading', 2)}>H2</View>
           <View onClick={() => setLineType('heading', 3)}>H3</View>
-          <View onClick={() => setLineType('taskList')}>待办</View>
+          <View className={formats.list === 'check' ? 'on' : ''} onClick={() => setLineType('taskList')}>待办</View>
           <View onClick={() => setLineType('orderedList')}>编号</View>
-          <View onClick={() => setLineType('bulletList')}>列表</View>
+          <View className={formats.list === 'bullet' ? 'on' : ''} onClick={() => setLineType('bulletList')}>列表</View>
           <View onClick={() => setLineType('blockquote')}>引用</View>
           <View className={formats.italic ? 'on italic' : 'italic'} onClick={() => applyFormat('italic')}>I</View>
           <View className={formats.underline ? 'on underline' : 'underline'} onClick={() => applyFormat('underline')}>U</View>
@@ -334,8 +343,8 @@ export default function DocumentPage() {
           <View className='primary compact' onClick={() => setInsertOpen(true)}>+</View>
           <View className={formats.header ? 'on' : ''} onClick={() => setLineType('paragraph')}>正文</View>
           <View className={formats.bold ? 'on strong' : 'strong'} onClick={() => applyFormat('bold')}>B</View>
-          <View onClick={() => setLineType('bulletList')}>列表</View>
-          <View onClick={() => setLineType('taskList')}>待办</View>
+          <View className={formats.list === 'bullet' ? 'on' : ''} onClick={() => setLineType('bulletList')}>列表</View>
+          <View className={formats.list === 'check' ? 'on' : ''} onClick={() => setLineType('taskList')}>待办</View>
           <View className={uploading ? 'disabled' : ''} onClick={chooseImage}>{uploading ? '上传中' : '图片'}</View>
           <View onClick={openMindMap}>导图</View>
           <View className={formatOpen ? 'on' : ''} onClick={() => setFormatOpen(!formatOpen)}>更多</View>
@@ -344,7 +353,7 @@ export default function DocumentPage() {
     </View>}
 
     {colorOpen && <View className='color-mask' onClick={() => setColorOpen(false)} />}
-    {colorOpen && <View className='color-panel' style={keyboardHeight ? { bottom: `${keyboardHeight + 104}px` } : undefined}>
+    {colorOpen && <View className='color-panel'>
       <View className='color-panel__head'><View><Text>字体颜色</Text><Text>点击色块即时应用</Text></View><View className='color-panel__close' onClick={() => setColorOpen(false)}>×</View></View>
       {recentColors.length > 0 && <View className='color-panel__section'><Text>最近使用</Text><View className='color-swatches recent'>{recentColors.map(color => <View key={color} className='color-swatch' style={{ background: color }} onClick={() => applyTextColor(color)} />)}</View></View>}
       <View className='color-panel__section'><Text>标准色</Text><View className='color-swatches'>{COLOR_GROUPS.flat().map(color => <View key={color} className={`color-swatch ${formats.color === color ? 'selected' : ''}`} style={{ background: color }} onClick={() => applyTextColor(color)} />)}</View></View>
@@ -352,7 +361,7 @@ export default function DocumentPage() {
     </View>}
 
     {insertOpen && <View className='insert-mask' onClick={() => setInsertOpen(false)} />}
-    {insertOpen && <View className='insert-sheet' style={keyboardHeight ? { bottom: `${keyboardHeight + 12}px` } : undefined}>
+    {insertOpen && <View className='insert-sheet'>
       <View className='insert-sheet__head'><Text>插入内容</Text><View onClick={() => setInsertOpen(false)}>关闭</View></View>
       <View className='insert-grid'>
         {INSERT_TYPES.map(item => <View key={item.type} onClick={() => insertContent(item.type)}><Text>{item.label}</Text></View>)}
