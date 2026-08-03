@@ -69,6 +69,8 @@ export default function DocumentPage() {
   const [insertOpen, setInsertOpen] = useState(false)
   const [panel, setPanel] = useState<'history' | 'share' | null>(null)
   const [keyboardHeight, setKeyboardHeight] = useState(0)
+  const initialWindowHeightRef = useRef(Taro.getWindowInfo().windowHeight)
+  const [viewportHeight, setViewportHeight] = useState(initialWindowHeightRef.current)
   const [, setEditorActive] = useState(false)
   const [formatOpen, setFormatOpen] = useState(false)
   const [formats, setFormats] = useState<Record<string, any>>({})
@@ -167,9 +169,17 @@ export default function DocumentPage() {
 
   useEffect(() => {
     const listener = ({ height }: { height: number }) => {
-      // Editor 拉起软键盘后，小程序可视区域本身已经缩短到键盘上方。
-      // 这里只记录键盘是否打开，不再把 height 重复叠加到 fixed bottom。
-      setKeyboardHeight(Number(height) > 0 ? 1 : 0)
+      const nextHeight = Math.max(0, Number(height) || 0)
+      setKeyboardHeight(nextHeight)
+      if (nextHeight > 0) {
+        // 禁止页面被键盘二次上推：根容器只占键盘上方的可视区域，
+        // 正文和工具栏在同一个 flex 布局中分配高度。
+        setViewportHeight(Math.max(260, initialWindowHeightRef.current - nextHeight))
+      } else {
+        const restoredHeight = Taro.getWindowInfo().windowHeight
+        if (restoredHeight > 0) initialWindowHeightRef.current = restoredHeight
+        setViewportHeight(restoredHeight || initialWindowHeightRef.current)
+      }
     }
     Taro.onKeyboardHeightChange(listener)
     return () => Taro.offKeyboardHeightChange(listener)
@@ -374,7 +384,7 @@ export default function DocumentPage() {
 
   const dockVisible = true
   const flowItems = documentFlow(blocks)
-  return <View className='document-page'>
+  return <View className='document-page' style={{ height: `${viewportHeight}px` }}>
     <Canvas id='kw-mindmap-preview-canvas' type='2d' className='mindmap-preview-canvas' />
     <View className='document-top'>
       <View className='document-top__type'>文</View>
@@ -386,7 +396,7 @@ export default function DocumentPage() {
     <ScrollView className='document-scroll' scrollY enhanced showScrollbar={false}>
       <View className='document-paper'>
         <View className='document-title-wrap'>
-          <Textarea className='document-title' autoHeight value={title} placeholder='无标题文档' maxlength={300} showConfirmBar={false} onFocus={() => setEditorActive(false)} onInput={event => setTitle(event.detail.value)} />
+          <Textarea className='document-title' autoHeight adjustPosition={false} value={title} placeholder='无标题文档' maxlength={300} showConfirmBar={false} onFocus={() => setEditorActive(false)} onInput={event => setTitle(event.detail.value)} />
         </View>
         <View className='document-flow'>
           {flowItems.map((item, flowIndex) => {
@@ -423,6 +433,7 @@ export default function DocumentPage() {
                       placeholder='输入待办事项'
                       maxlength={2000}
                       showConfirmBar={false}
+                      adjustPosition={false}
                       onFocus={() => { activeInsertionIndexRef.current = item.index + 1; setEditorActive(true) }}
                       onInput={event => updateTaskLine(item.index, lineIndex, event.detail.value)}
                     />

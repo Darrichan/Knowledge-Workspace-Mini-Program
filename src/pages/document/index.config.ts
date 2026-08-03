@@ -1,1 +1,4 @@
-export default definePageConfig({ navigationBarTitleText: '编辑内容' })
+export default definePageConfig({
+  navigationBarTitleText: '编辑内容',
+  disableScroll: true
+})

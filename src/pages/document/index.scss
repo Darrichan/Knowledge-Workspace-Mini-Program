@@ -1,8 +1,14 @@
 .document-page {
+  position: fixed;
+  inset: 0;
+  width: 100%;
   height: 100vh;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   color: #1d2b3e;
   background: #fff;
+  box-sizing: border-box;
 }
 
 .mindmap-preview-canvas { position: fixed; z-index: -1; left: 0; top: 0; width: 720px; height: 360px; opacity: .001; pointer-events: none; }
@@ -15,6 +21,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  flex: none;
   background: rgba(255, 255, 255, .98);
   border-bottom: 1px solid #edf0f4;
 }
@@ -59,12 +66,15 @@
 }
 
 .document-scroll {
-  height: calc(100vh - 58px);
+  min-height: 0;
+  height: 0;
+  flex: 1;
+  overflow: hidden;
   background: #fff;
 }
 
 .document-paper {
-  min-height: calc(100vh - 130px);
+  min-height: 100%;
   padding: 0 18px;
   background: #fff;
 }
@@ -266,11 +276,11 @@
 }
 
 .document-bottom-space {
-  height: 76px;
+  height: 36px;
 }
 
 .document-bottom-space.dock-visible {
-  height: 176px;
+  height: 36px;
 }
 
 .floating-insert {
@@ -304,15 +314,15 @@
 }
 
 .editor-dock {
-  position: fixed;
+  position: relative;
   z-index: 120;
-  left: 0;
-  right: 0;
+  width: 100%;
+  flex: none;
   padding-bottom: env(safe-area-inset-bottom);
   background: rgba(255, 255, 255, .99);
   border-top: 1px solid #dfe5ed;
   box-shadow: 0 -10px 28px rgba(35, 49, 71, .1);
-  bottom: 0;
+  box-sizing: border-box;
 }
 
 .editor-dock.keyboard-open {
