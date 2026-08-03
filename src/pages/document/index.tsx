@@ -1,4 +1,4 @@
-import { Canvas, Editor, Input, ScrollView, Text, Textarea, View } from '@tarojs/components'
+import { Canvas, Editor, Image, Input, ScrollView, Text, Textarea, View } from '@tarojs/components'
 import Taro, { useLoad, useRouter } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import DocumentPanels from '../../components/DocumentPanels'
@@ -25,6 +25,36 @@ const COLOR_GROUPS = [
   ['#6142a0', '#7657b8', '#9a82d0', '#943e6c', '#c86498']
 ]
 
+type DocumentFlowItem =
+  | { kind: 'editor'; key: string; start: number; count: number; blocks: DocumentBlock[] }
+  | { kind: 'task'; key: string; index: number; block: DocumentBlock }
+  | { kind: 'mindmap'; key: string; index: number; block: DocumentBlock }
+
+const documentFlow = (blocks: DocumentBlock[]): DocumentFlowItem[] => {
+  const output: DocumentFlowItem[] = []
+  let segmentStart = 0
+  let segmentBlocks: DocumentBlock[] = []
+  let segmentIndex = 0
+  const flush = () => {
+    if (!segmentBlocks.length) return
+    output.push({ kind: 'editor', key: `editor-${segmentIndex++}`, start: segmentStart, count: segmentBlocks.length, blocks: segmentBlocks })
+    segmentBlocks = []
+  }
+  blocks.forEach((block, index) => {
+    if (block.type === 'taskList' || block.type === 'mindMapBlock') {
+      flush()
+      output.push({ kind: block.type === 'taskList' ? 'task' : 'mindmap', key: `${block.type}-${block.id}`, index, block } as DocumentFlowItem)
+      segmentStart = index + 1
+    } else {
+      if (!segmentBlocks.length) segmentStart = index
+      segmentBlocks.push(block)
+    }
+  })
+  flush()
+  if (!output.some(item => item.kind === 'editor')) output.push({ kind: 'editor', key: `editor-${segmentIndex}`, start: blocks.length, count: 0, blocks: [] })
+  return output
+}
+
 export default function DocumentPage() {
   const id = useRouter().params.id || ''
   const [document, setDocument] = useState<DocumentItem | null>(null)
@@ -41,12 +71,15 @@ export default function DocumentPage() {
   const [colorOpen, setColorOpen] = useState(false)
   const [customColor, setCustomColor] = useState('#5579c2')
   const [recentColors, setRecentColors] = useState<string[]>([])
+  const [mapPreviews, setMapPreviews] = useState<Record<string, string>>({})
   const hydrated = useRef(false)
   const versionRef = useRef(1)
   const documentRef = useRef<DocumentItem | null>(null)
   const titleRef = useRef('')
   const blocksRef = useRef<DocumentBlock[]>([])
   const editorRef = useRef<Taro.EditorContext | null>(null)
+  const editorRefs = useRef<Record<string, Taro.EditorContext>>({})
+  const activeInsertionIndexRef = useRef(0)
   const imageLookupRef = useRef<EditorImageLookup>({})
   const settingEditorRef = useRef(false)
   const savingRef = useRef(false)
@@ -63,27 +96,14 @@ export default function DocumentPage() {
     })
   }
 
-  const loadBlocksIntoEditor = async (nextBlocks: DocumentBlock[]) => {
-    if (!editorRef.current) return
+  const loadBlocksIntoEditor = async (context: Taro.EditorContext, nextBlocks: DocumentBlock[]) => {
     settingEditorRef.current = true
     try {
       const prepared = await blocksToEditorDelta(nextBlocks, async block => {
         try { return await downloadAssetFile(block.thumbnail || block.src) } catch { return block.thumbnail || block.src || '' }
-      }, async block => {
-        try {
-          if (!block.mapId || !documentRef.current) return ''
-          const item = await mindMapApi.get(documentRef.current.id, block.mapId)
-          block.title = item.title
-          block.nodeCount = Array.isArray(item.graph?.nodes) ? item.graph.nodes.length : block.nodeCount
-          block.previewLabels = Array.isArray(item.graph?.nodes) ? item.graph.nodes.slice(0, 6).map((node: any) => String(node.data?.label || '新主题')) : block.previewLabels
-          return await renderMindMapPreview(item, await getPreviewCanvas())
-        } catch (error) {
-          console.error('KW_MINDMAP_PREVIEW', error)
-          return ''
-        }
       })
-      imageLookupRef.current = prepared.imageLookup
-      editorRef.current.setContents({
+      imageLookupRef.current = { ...imageLookupRef.current, ...prepared.imageLookup }
+      context.setContents({
         delta: prepared.delta,
         complete: () => setTimeout(() => { settingEditorRef.current = false }, 80)
       })
@@ -100,7 +120,6 @@ export default function DocumentPage() {
     setBlocks(nextBlocks); blocksRef.current = nextBlocks
     versionRef.current = result.version
     setStatus(`版本 ${result.version}`)
-    if (editorRef.current) void loadBlocksIntoEditor(nextBlocks)
   }
 
   useLoad(async () => {
@@ -148,16 +167,39 @@ export default function DocumentPage() {
     return () => Taro.offKeyboardHeightChange(listener)
   }, [])
 
-  const editorReady = () => {
-    Taro.createSelectorQuery().select('#kw-document-editor').context(result => {
-      editorRef.current = result.context as Taro.EditorContext
-      void loadBlocksIntoEditor(blocksRef.current)
+  const mapSignature = blocks.filter(block => block.type === 'mindMapBlock').map(block => block.mapId || block.id).join('|')
+  useEffect(() => {
+    if (!documentRef.current || !mapSignature) return
+    let cancelled = false
+    const load = async () => {
+      for (const block of blocksRef.current.filter(item => item.type === 'mindMapBlock' && item.mapId)) {
+        const key = block.mapId || block.id
+        if (mapPreviews[key]) continue
+        try {
+          const item = await mindMapApi.get(documentRef.current!.id, block.mapId!)
+          const source = await renderMindMapPreview(item, await getPreviewCanvas())
+          if (!cancelled) setMapPreviews(current => ({ ...current, [key]: source }))
+        } catch (error) { console.error('KW_MINDMAP_PREVIEW', error) }
+      }
+    }
+    const timer = setTimeout(() => void load(), 30)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [document?.id, mapSignature])
+
+  const editorReady = (key: string, segmentBlocks: DocumentBlock[]) => {
+    Taro.createSelectorQuery().select(`#kw-document-${key}`).context(result => {
+      const context = result.context as Taro.EditorContext
+      editorRefs.current[key] = context
+      if (!editorRef.current) editorRef.current = context
+      void loadBlocksIntoEditor(context, segmentBlocks)
     }).exec()
   }
 
-  const onEditorInput = (event: any) => {
+  const onEditorInput = (start: number, count: number, event: any) => {
     if (settingEditorRef.current) return
-    const next = editorDeltaToBlocks(event.detail.delta as EditorDelta, imageLookupRef.current)
+    const segment = editorDeltaToBlocks(event.detail.delta as EditorDelta, imageLookupRef.current)
+    const next = [...blocksRef.current]
+    next.splice(start, count, ...segment)
     blocksRef.current = next
     setBlocks(next)
   }
@@ -177,6 +219,15 @@ export default function DocumentPage() {
   }
 
   const setLineType = (type: BlockType, level = 2) => {
+    if (type === 'taskList') {
+      const next = [...blocksRef.current]
+      const index = Math.min(next.length, Math.max(0, activeInsertionIndexRef.current))
+      next.splice(index, 0, { id: `${Date.now()}-task`, type: 'taskList', text: '待办事项', checkedLines: [false] })
+      blocksRef.current = next
+      setBlocks(next)
+      setInsertOpen(false)
+      return
+    }
     if (!editorRef.current) return
     if (type === 'paragraph') {
       editorRef.current.format('header', '')
@@ -189,14 +240,7 @@ export default function DocumentPage() {
     } else if (type === 'orderedList') {
       editorRef.current.format('list', '')
       setTimeout(() => editorRef.current?.format('list', 'ordered'), 0)
-    } else if (type === 'taskList') {
-      // iOS WeChat currently renders the native `check` list as a bullet in some
-      // versions. Insert an editable checkbox glyph instead so the document keeps
-      // task semantics without showing a misleading unordered-list marker.
-      editorRef.current.format('list', '')
-      setTimeout(() => editorRef.current?.insertText({ text: '☐ ' }), 0)
-    }
-    else if (type === 'blockquote') editorRef.current.format('blockquote', 'true')
+    } else if (type === 'blockquote') editorRef.current.format('blockquote', 'true')
     else if (type === 'codeBlock') {
       editorRef.current.format('fontFamily', 'monospace')
       editorRef.current.format('backgroundColor', '#eef2f7')
@@ -214,6 +258,7 @@ export default function DocumentPage() {
   }
 
   const insertContent = (type: BlockType) => {
+    if (type === 'taskList') return setLineType(type)
     if (!editorRef.current) return
     if (type === 'horizontalRule') editorRef.current.insertDivider()
     else if (type === 'link') void insertLink()
@@ -256,10 +301,11 @@ export default function DocumentPage() {
       Taro.showLoading({ title: '创建导图', mask: true })
       const rootId = `root-${Date.now()}`
       const map = await mindMapApi.create(documentRef.current.id, '未命名思维导图', { nodes: [{ id: rootId, type: 'root', position: { x: 80, y: 180 }, data: { label: '中心主题' } }], edges: [], layoutStyle: 'right' })
-      const next: DocumentBlock[] = [...blocksRef.current, { id: `${Date.now()}-map`, type: 'mindMapBlock', mapId: map.id, title: map.title, nodeCount: 1, previewLabels: ['中心主题'] }]
+      const next: DocumentBlock[] = [...blocksRef.current]
+      const index = Math.min(next.length, Math.max(0, activeInsertionIndexRef.current))
+      next.splice(index, 0, { id: `${Date.now()}-map`, type: 'mindMapBlock', mapId: map.id, title: map.title, nodeCount: 1, previewLabels: ['中心主题'] })
       blocksRef.current = next
       setBlocks(next)
-      await loadBlocksIntoEditor(next)
     } catch (error) { Taro.showToast({ title: (error as Error).message, icon: 'none' }) }
     finally { Taro.hideLoading(); setInsertOpen(false) }
   }
@@ -277,6 +323,36 @@ export default function DocumentPage() {
     Taro.navigateTo({ url: `/pages/mindmap/index?id=${documentRef.current?.id || ''}&mapId=${selected.mapId}` })
   }
 
+  const openMindMapBlock = (block: DocumentBlock) => {
+    if (!block.mapId || !documentRef.current) return
+    editorRef.current?.blur()
+    Taro.hideKeyboard()
+    Taro.navigateTo({ url: `/pages/mindmap/index?id=${documentRef.current.id}&mapId=${block.mapId}` })
+  }
+
+  const updateTaskLine = (blockIndex: number, lineIndex: number, value: string) => {
+    const next = [...blocksRef.current]
+    const current = next[blockIndex]
+    if (!current || current.type !== 'taskList') return
+    const lines = (current.text || '').split('\n')
+    lines[lineIndex] = value
+    next[blockIndex] = { ...current, text: lines.join('\n') }
+    blocksRef.current = next
+    setBlocks(next)
+  }
+
+  const toggleTaskLine = (blockIndex: number, lineIndex: number) => {
+    const next = [...blocksRef.current]
+    const current = next[blockIndex]
+    if (!current || current.type !== 'taskList') return
+    const checkedLines = [...(current.checkedLines || [])]
+    checkedLines[lineIndex] = !checkedLines[lineIndex]
+    next[blockIndex] = { ...current, checkedLines }
+    blocksRef.current = next
+    setBlocks(next)
+    Taro.vibrateShort({ type: 'light' }).catch(() => {})
+  }
+
   const openDocumentMenu = () => Taro.showActionSheet({ itemList: ['编辑历史', '分享与发布', '删除文档'] }).then(async result => {
     if (result.tapIndex === 0) setPanel('history')
     if (result.tapIndex === 1) setPanel('share')
@@ -290,6 +366,7 @@ export default function DocumentPage() {
 
   const dockVisible = true
   const keyboardOffset = keyboardHeight > 0 ? Math.round(keyboardHeight / pixelRatioRef.current) : 0
+  const flowItems = documentFlow(blocks)
   return <View className='document-page'>
     <Canvas id='kw-mindmap-preview-canvas' type='2d' className='mindmap-preview-canvas' />
     <View className='document-top'>
@@ -304,18 +381,59 @@ export default function DocumentPage() {
         <View className='document-title-wrap'>
           <Textarea className='document-title' autoHeight value={title} placeholder='无标题文档' maxlength={300} showConfirmBar={false} onFocus={() => setEditorActive(false)} onInput={event => setTitle(event.detail.value)} />
         </View>
-        <Editor
-          id='kw-document-editor'
-          className='document-editor'
-          placeholder='输入正文…'
-          showImgSize
-          showImgToolbar
-          showImgResize
-          onReady={editorReady}
-          onFocus={() => setEditorActive(true)}
-          onInput={onEditorInput}
-          onStatusChange={(event: any) => setFormats(event.detail || {})}
-        />
+        <View className='document-flow'>
+          {flowItems.map((item, flowIndex) => {
+            if (item.kind === 'editor') return <Editor
+              key={item.key}
+              id={`kw-document-${item.key}`}
+              className={`document-editor document-editor--segment ${flowIndex === flowItems.length - 1 ? 'document-editor--last' : ''}`}
+              placeholder={flowIndex === flowItems.length - 1 ? '输入正文…' : ''}
+              showImgSize
+              showImgToolbar
+              showImgResize
+              onReady={() => editorReady(item.key, item.blocks)}
+              onFocus={() => {
+                editorRef.current = editorRefs.current[item.key] || editorRef.current
+                activeInsertionIndexRef.current = item.start + item.count
+                setEditorActive(true)
+              }}
+              onInput={(event: any) => onEditorInput(item.start, item.count, event)}
+              onStatusChange={(event: any) => setFormats(event.detail || {})}
+            />
+            if (item.kind === 'task') {
+              const lines = (item.block.text || '待办事项').split('\n')
+              return <View key={item.key} className='task-block'>
+                {lines.map((line, lineIndex) => {
+                  const checked = Boolean(item.block.checkedLines?.[lineIndex])
+                  return <View key={`${item.key}-${lineIndex}`} className={`task-row ${checked ? 'checked' : ''}`}>
+                    <View className='task-check-hit' onClick={() => toggleTaskLine(item.index, lineIndex)}>
+                      <View className='task-check'>{checked ? '✓' : ''}</View>
+                    </View>
+                    <Textarea
+                      className='task-text'
+                      autoHeight
+                      value={line}
+                      maxlength={2000}
+                      showConfirmBar={false}
+                      onFocus={() => { activeInsertionIndexRef.current = item.index + 1; setEditorActive(true) }}
+                      onInput={event => updateTaskLine(item.index, lineIndex, event.detail.value)}
+                    />
+                  </View>
+                })}
+              </View>
+            }
+            const preview = mapPreviews[item.block.mapId || item.block.id]
+            return <View key={item.key} className='mindmap-interactive' hoverClass='mindmap-interactive--pressed' onClick={() => openMindMapBlock(item.block)}>
+              {preview
+                ? <Image className='mindmap-interactive__image' src={preview} mode='widthFix' />
+                : <View className='mindmap-interactive__fallback'><View className='mindmap-interactive__root'>{item.block.previewLabels?.[0] || '中心主题'}</View></View>}
+              <View className='mindmap-interactive__bar'>
+                <View><Text className='mindmap-interactive__title'>{item.block.title || '未命名思维导图'}</Text><Text className='mindmap-interactive__meta'>{item.block.nodeCount || 1} 个主题</Text></View>
+                <View className='mindmap-interactive__open'>进入编辑 <Text>→</Text></View>
+              </View>
+            </View>
+          })}
+        </View>
       </View>
       <View className={`document-bottom-space ${dockVisible ? 'dock-visible' : ''}`} />
     </ScrollView>
