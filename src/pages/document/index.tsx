@@ -167,9 +167,9 @@ export default function DocumentPage() {
 
   useEffect(() => {
     const listener = ({ height }: { height: number }) => {
-      const pixelRatio = Math.max(1, Number(Taro.getWindowInfo().pixelRatio) || 1)
-      const nextHeight = Math.max(0, Math.round((Number(height) || 0) / pixelRatio))
-      setKeyboardHeight(nextHeight)
+      // Editor 拉起软键盘后，小程序可视区域本身已经缩短到键盘上方。
+      // 这里只记录键盘是否打开，不再把 height 重复叠加到 fixed bottom。
+      setKeyboardHeight(Number(height) > 0 ? 1 : 0)
     }
     Taro.onKeyboardHeightChange(listener)
     return () => Taro.offKeyboardHeightChange(listener)
@@ -448,7 +448,7 @@ export default function DocumentPage() {
 
     {!dockVisible && !insertOpen && <View className='floating-insert' onClick={() => { setInsertOpen(true); setEditorActive(true) }}><View className='floating-insert__plus'>+</View><Text>插入内容</Text></View>}
 
-    {dockVisible && !insertOpen && <View className={`editor-dock ${keyboardHeight ? 'keyboard-open' : ''}`} style={`bottom:${keyboardHeight > 0 ? `${keyboardHeight}px` : '0px'}`}>
+    {dockVisible && !insertOpen && <View className={`editor-dock ${keyboardHeight ? 'keyboard-open' : ''}`}>
       {formatOpen ? <ScrollView className='format-strip' scrollX showScrollbar={false}>
         <View className='format-strip__inner'>
           <View className='format-back' onClick={() => setFormatOpen(false)}>‹ 返回</View>
