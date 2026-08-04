@@ -503,3 +503,31 @@
   .document-editor,
   .document-editor::before { font-size: 27px; }
 }
+
+/* 临时诊断面板。确认待办样式问题后连同 index.tsx 里的入口一起删除。 */
+.diagnostics-sheet {
+  position: fixed;
+  z-index: 140;
+  left: 18px;
+  right: 18px;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  max-height: 72vh;
+  padding: 18px;
+  background: #fff;
+  border: 1px solid #dbe3ee;
+  border-radius: 24px;
+  box-shadow: 0 20px 60px rgba(38, 52, 76, .2);
+}
+
+.diagnostics-body {
+  max-height: 56vh;
+}
+
+.diagnostics-text {
+  color: #33465e;
+  word-break: break-all;
+  white-space: pre-wrap;
+  font-size: 18px;
+  font-family: monospace;
+  line-height: 1.6;
+}

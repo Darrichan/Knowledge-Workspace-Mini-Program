@@ -1,4 +1,4 @@
-import { Canvas, Editor, Input, ScrollView, Text, Textarea, View } from '@tarojs/components'
+import { Canvas, Editor, Image, Input, ScrollView, Text, Textarea, View } from '@tarojs/components'
 import Taro, { useLoad, useRouter } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import DocumentPanels from '../../components/DocumentPanels'
@@ -50,6 +50,36 @@ const editorHeightRpx = (segmentBlocks: DocumentBlock[]) => {
   return Math.max(180, contentHeight + 64)
 }
 
+// \u5bfc\u56fe\u662f\u5757\u7ea7\u5361\u7247\uff0c\u5fae\u4fe1 Editor \u88c5\u4e0d\u4e0b\u5b83\uff08insertImage \u53ea\u8ba4\u4e34\u65f6\u6587\u4ef6\uff0c\u4e14\u5361\u7247\u5916\u89c2
+// \u5b8c\u5168\u4e0d\u53d7\u6211\u4eec\u63a7\u5236\uff09\u3002\u56e0\u6b64\u53ea\u5728\u5bfc\u56fe\u5904\u628a\u6b63\u6587\u5207\u6210\u591a\u6bb5 Editor\uff0c\u5bfc\u56fe\u672c\u8eab\u7528\u666e\u901a
+// React \u7ec4\u4ef6\u6e32\u67d3\u5728\u6bb5\u4e0e\u6bb5\u4e4b\u95f4\u3002\u5f85\u529e\u662f\u884c\u5185\u683c\u5f0f\uff0cEditor \u539f\u751f\u652f\u6301\uff0c\u4e0d\u5207\u3002
+type DocumentFlowItem =
+  | { kind: 'editor'; key: string; start: number; count: number; blocks: DocumentBlock[] }
+  | { kind: 'mindmap'; key: string; index: number; block: DocumentBlock }
+
+const documentFlow = (blocks: DocumentBlock[]): DocumentFlowItem[] => {
+  const output: DocumentFlowItem[] = []
+  let segmentStart = 0
+  let segmentBlocks: DocumentBlock[] = []
+  let segmentIndex = 0
+  const flush = () => {
+    output.push({ kind: 'editor', key: `editor-${segmentIndex++}`, start: segmentStart, count: segmentBlocks.length, blocks: segmentBlocks })
+    segmentBlocks = []
+  }
+  blocks.forEach((block, index) => {
+    if (block.type === 'mindMapBlock') {
+      flush()
+      output.push({ kind: 'mindmap', key: `mindmap-${block.mapId || block.id}`, index, block })
+      segmentStart = index + 1
+    } else {
+      if (!segmentBlocks.length) segmentStart = index
+      segmentBlocks.push(block)
+    }
+  })
+  flush()
+  return output
+}
+
 const deltaText = (delta?: EditorDelta) => (delta?.ops || []).map(op => typeof op.insert === 'string' ? op.insert : '\ufffc').join('')
 
 export default function DocumentPage() {
@@ -76,6 +106,10 @@ export default function DocumentPage() {
   const [uploading, setUploading] = useState(false)
   const [creatingMindMap, setCreatingMindMap] = useState(false)
   const [mindMapChoices, setMindMapChoices] = useState<DocumentItem[]>([])
+  const [mapPreviews, setMapPreviews] = useState<Record<string, string>>({})
+  // 临时诊断：待办复选框的样式取决于页面 wxss 能否穿透进 <editor>，
+  // 这一点没有设备侧证据。确认后连同 ••• 菜单里的入口一起删掉。
+  const [diagnostics, setDiagnostics] = useState('')
   const [colorOpen, setColorOpen] = useState(false)
   const [customColor, setCustomColor] = useState('#5579c2')
   const [recentColors, setRecentColors] = useState<string[]>([])
@@ -87,12 +121,15 @@ export default function DocumentPage() {
   const editorRef = useRef<Taro.EditorContext | null>(null)
   const imageLookupRef = useRef<EditorImageLookup>({})
   const editorTextRef = useRef('')
-  const pendingMindMapsRef = useRef<Record<string, DocumentBlock>>({})
   const settingEditorRef = useRef(false)
   const savingRef = useRef(false)
   const creatingMindMapRef = useRef(false)
   const queuedRef = useRef(false)
   const previewCanvasRef = useRef<any>(null)
+  const editorRefs = useRef<Record<string, Taro.EditorContext>>({})
+  // 光标所在段的末尾位置，新导图插在这里而不是永远追加到文末。
+  const activeInsertionIndexRef = useRef(0)
+  const previewAttemptedRef = useRef<Set<string>>(new Set())
 
   const getPreviewCanvas = async () => {
     if (previewCanvasRef.current) return previewCanvasRef.current
@@ -106,19 +143,9 @@ export default function DocumentPage() {
   const loadBlocksIntoEditor = async (context: Taro.EditorContext, nextBlocks: DocumentBlock[]) => {
     settingEditorRef.current = true
     try {
-      const prepared = await blocksToEditorDelta(
-        nextBlocks,
-        async block => {
-          try { return await downloadAssetFile(block.thumbnail || block.src) } catch { return block.thumbnail || block.src || '' }
-        },
-        async block => {
-          if (!documentRef.current || !block.mapId) return ''
-          try {
-            const map = await mindMapApi.get(documentRef.current.id, block.mapId)
-            return await renderMindMapPreview(map, await getPreviewCanvas())
-          } catch { return '' }
-        }
-      )
+      const prepared = await blocksToEditorDelta(nextBlocks, async block => {
+        try { return await downloadAssetFile(block.thumbnail || block.src) } catch { return block.thumbnail || block.src || '' }
+      })
       imageLookupRef.current = { ...imageLookupRef.current, ...prepared.imageLookup }
       editorTextRef.current = deltaText(prepared.delta)
       context.setContents({
@@ -136,13 +163,14 @@ export default function DocumentPage() {
     setTitle(result.title); titleRef.current = result.title
     const nextBlocks = contentToBlocks(result.content)
     setBlocks(nextBlocks); blocksRef.current = nextBlocks
-    pendingMindMapsRef.current = {}
     versionRef.current = result.version
     setStatus(`版本 ${result.version}`)
-    // Editor ready and document loading race on different devices. If the
-    // native context already exists, hydrate must push the fetched content;
-    // otherwise editorReady will do it when the component becomes available.
-    if (editorRef.current) void loadBlocksIntoEditor(editorRef.current, nextBlocks)
+    // 已经挂载的段要立刻推入内容；还没 ready 的会在 editorReady 里补上。
+    documentFlow(nextBlocks).forEach(item => {
+      if (item.kind !== 'editor') return
+      const context = editorRefs.current[item.key]
+      if (context) void loadBlocksIntoEditor(context, item.blocks)
+    })
   }
 
   useLoad(async () => {
@@ -304,46 +332,27 @@ export default function DocumentPage() {
     Taro.hideKeyboard()
   }
 
-  const editorReady = () => {
-    Taro.createSelectorQuery().select('#kw-document-editor').context(result => {
+  const editorReady = (key: string, segmentBlocks: DocumentBlock[]) => {
+    Taro.createSelectorQuery().select(`#kw-document-${key}`).context(result => {
       const context = result.context as Taro.EditorContext
-      editorRef.current = context
-      void loadBlocksIntoEditor(context, blocksRef.current)
+      if (!context) return
+      editorRefs.current[key] = context
+      if (!editorRef.current) editorRef.current = context
+      void loadBlocksIntoEditor(context, segmentBlocks)
     }).exec()
   }
 
-  const preservePendingMindMaps = (nextBlocks: DocumentBlock[]) => {
-    const foundMapIds = new Set(nextBlocks.filter(block => block.type === 'mindMapBlock' && block.mapId).map(block => block.mapId))
-    // Keep the registry for the lifetime of this editor page. Native Editor
-    // may rewrite a temporary image URL on a later input event; dropping the
-    // registry after the first successful parse made the map disappear again.
-    const missing = Object.values(pendingMindMapsRef.current).filter(block => block.mapId && !foundMapIds.has(block.mapId))
-    return missing.length ? [...nextBlocks, ...missing] : nextBlocks
-  }
-
-  const onEditorInput = (event: any) => {
+  // 一段 Editor 只负责 blocks[start, start+count) 这一片，回写时原地替换该片。
+  const onEditorInput = (start: number, count: number, event: any) => {
     if (settingEditorRef.current) return
     const delta = event.detail.delta as EditorDelta
     editorTextRef.current = deltaText(delta)
     // 待办的续行与退出由原生 checklist 自己处理，这里只负责把 delta 同步成块。
-    const next = preservePendingMindMaps(editorDeltaToBlocks(delta, imageLookupRef.current))
+    const segment = editorDeltaToBlocks(delta, imageLookupRef.current)
+    const next = [...blocksRef.current.slice(0, start), ...segment, ...blocksRef.current.slice(start + count)]
     blocksRef.current = next
     setBlocks(next)
   }
-
-  const syncBlocksFromEditor = () => new Promise<void>(resolve => {
-    if (!editorRef.current) return resolve()
-    editorRef.current.getContents({
-      success: (result: any) => {
-        if (!result?.delta || settingEditorRef.current) return resolve()
-        const next = preservePendingMindMaps(editorDeltaToBlocks(result.delta as EditorDelta, imageLookupRef.current))
-        blocksRef.current = next
-        setBlocks(next)
-        resolve()
-      },
-      fail: () => resolve()
-    })
-  })
 
   const applyFormat = (name: string, value?: string) => {
     if (!editorRef.current) return
@@ -430,7 +439,8 @@ export default function DocumentPage() {
   }
 
   const createAndInsertMindMap = async (title: string, graph: Record<string, any>, successMessage: string) => {
-    if (!documentRef.current || !editorRef.current || creatingMindMapRef.current) return
+    // 不再要求 editorRef —— 导图卡片是独立 React 块，跟 Editor 实例无关。
+    if (!documentRef.current || creatingMindMapRef.current) return
     creatingMindMapRef.current = true
     setCreatingMindMap(true)
     try {
@@ -438,39 +448,21 @@ export default function DocumentPage() {
       const map = await mindMapApi.create(documentRef.current.id, title, graph)
       const summary = mindMapGraphSummary(map.graph || graph)
       const mapBlock: DocumentBlock = { id: `${Date.now()}-map`, type: 'mindMapBlock', mapId: map.id, title: map.title, ...summary }
-      const mapAlt = `思维导图：${map.title}`
-      pendingMindMapsRef.current[map.id] = mapBlock
-      const next = [...blocksRef.current, mapBlock]
+      // 插到光标所在段之后；没聚焦过就追加到文末。
+      const insertAt = Math.min(Math.max(0, activeInsertionIndexRef.current || blocksRef.current.length), blocksRef.current.length)
+      const next = [...blocksRef.current.slice(0, insertAt), mapBlock, ...blocksRef.current.slice(insertAt)]
       blocksRef.current = next
       setBlocks(next)
-      let preview = ''
-      try { preview = await renderMindMapPreview(map, await getPreviewCanvas()) } catch {}
-      if (preview) {
-        const mapSource = {
-          kind: 'mindMap', src: preview, mapId: map.id, title: map.title,
-          ...summary, alt: mapAlt
-        } as const
-        imageLookupRef.current[preview] = mapSource
-        imageLookupRef.current[map.id] = mapSource
-        imageLookupRef.current[mapAlt] = mapSource
-        editorRef.current.insertImage({
-          src: preview,
-          width: '100%',
-          alt: mapAlt,
-          data: { kind: 'mindMap', mapId: map.id, localSrc: preview },
-          success: () => setTimeout(async () => {
-            await syncBlocksFromEditor()
-            await saveNow('mind-map-insert')
-          }, 80),
-          fail: () => void loadBlocksIntoEditor(editorRef.current!, next).then(() => saveNow('mind-map-insert'))
-        })
-      } else {
-        await loadBlocksIntoEditor(editorRef.current, next)
-        void saveNow('mind-map-insert')
-      }
-      setEditorActive(true)
+      activeInsertionIndexRef.current = insertAt + 1
+      // 预览图失败也不影响卡片出现，卡片会退化成中心主题占位。
+      try {
+        const preview = await renderMindMapPreview(map, await getPreviewCanvas())
+        if (preview) setMapPreviews(current => ({ ...current, [map.id]: preview }))
+      } catch {}
+      previewAttemptedRef.current.add(map.id)
+      await saveNow('mind-map-insert')
       Taro.showToast({ title: successMessage, icon: 'success' })
-    } catch (error) { Taro.showToast({ title: (error as Error).message, icon: 'none' }) }
+    } catch (error) { Taro.showToast({ title: (error as Error).message || '导图创建失败', icon: 'none' }) }
     finally {
       creatingMindMapRef.current = false
       setCreatingMindMap(false)
@@ -486,6 +478,33 @@ export default function DocumentPage() {
       edges: [],
       layoutStyle: 'right'
     }, '导图已插入')
+  }
+
+  // 为正文里已有的导图块补预览图。失败只试一次，避免每次输入都重试。
+  useEffect(() => {
+    const pending = blocks.filter(block =>
+      block.type === 'mindMapBlock' && block.mapId &&
+      !mapPreviews[block.mapId] && !previewAttemptedRef.current.has(block.mapId)
+    )
+    if (!pending.length || !documentRef.current) return
+    let cancelled = false
+    void (async () => {
+      for (const block of pending) {
+        const mapId = block.mapId as string
+        previewAttemptedRef.current.add(mapId)
+        try {
+          const map = await mindMapApi.get(documentRef.current!.id, mapId)
+          const preview = await renderMindMapPreview(map, await getPreviewCanvas())
+          if (!cancelled && preview) setMapPreviews(current => ({ ...current, [mapId]: preview }))
+        } catch {}
+      }
+    })()
+    return () => { cancelled = true }
+  }, [blocks, mapPreviews])
+
+  const openMindMapBlock = (block: DocumentBlock) => {
+    if (!block.mapId || !documentRef.current) return
+    Taro.navigateTo({ url: `/pages/mindmap/index?id=${documentRef.current.id}&mapId=${block.mapId}` })
   }
 
   const importMindMap = async () => {
@@ -514,25 +533,8 @@ export default function DocumentPage() {
   }
 
   const openMindMap = async () => {
-    const mapsById = new Map<string, DocumentBlock>()
-    blocksRef.current.filter(block => block.type === 'mindMapBlock' && block.mapId).forEach(block => mapsById.set(block.mapId!, block))
-    Object.values(pendingMindMapsRef.current).forEach(block => { if (block.mapId) mapsById.set(block.mapId, block) })
-    // The database is the final source of truth. This also covers a map that
-    // was created successfully while the native Editor was still normalizing
-    // its inserted preview image.
-    if (!mapsById.size && documentRef.current) {
-      try {
-        const serverMaps = await mindMapApi.list(documentRef.current.id)
-        serverMaps.forEach(map => mapsById.set(map.id, {
-          id: `${map.id}-map`, type: 'mindMapBlock', mapId: map.id, title: map.title,
-          nodeCount: Array.isArray(map.graph?.nodes) ? map.graph.nodes.length : 1
-        }))
-      } catch (error) {
-        return Taro.showToast({ title: (error as Error).message || '导图加载失败', icon: 'none' })
-      }
-    }
-    const maps = [...mapsById.values()]
-    if (!maps.length) return Taro.showToast({ title: '当前文档还没有思维导图', icon: 'none' })
+    const maps = blocksRef.current.filter(block => block.type === 'mindMapBlock' && block.mapId)
+    if (!maps.length) return Taro.showToast({ title: '当前文档还没有思维导图，请先插入', icon: 'none' })
     let selected = maps[0]
     if (maps.length > 1) {
       try {
@@ -540,13 +542,28 @@ export default function DocumentPage() {
         selected = maps[result.tapIndex] || selected
       } catch { return }
     }
-    Taro.navigateTo({ url: `/pages/mindmap/index?id=${documentRef.current?.id || ''}&mapId=${selected.mapId}` })
+    openMindMapBlock(selected)
   }
 
-  const openDocumentMenu = () => Taro.showActionSheet({ itemList: ['编辑历史', '分享与发布', '删除文档'] }).then(async result => {
+  const runDiagnostics = () => {
+    const base: Record<string, any> = {
+      SDKVersion: Taro.getSystemInfoSync().SDKVersion,
+      当前行格式: formats || null,
+      段数: documentFlow(blocksRef.current).filter(item => item.kind === 'editor').length
+    }
+    const context = editorRef.current
+    if (!context) return setDiagnostics(JSON.stringify({ ...base, 错误: '没有拿到 editor context' }, null, 1))
+    context.getContents({
+      success: (result: any) => setDiagnostics(JSON.stringify({ ...base, html: String(result?.html || '').slice(0, 2000) }, null, 1)),
+      fail: (error: any) => setDiagnostics(JSON.stringify({ ...base, 错误: error?.errMsg || 'getContents 失败' }, null, 1))
+    })
+  }
+
+  const openDocumentMenu = () => Taro.showActionSheet({ itemList: ['编辑历史', '分享与发布', '编辑器诊断', '删除文档'] }).then(async result => {
     if (result.tapIndex === 0) setPanel('history')
     if (result.tapIndex === 1) setPanel('share')
-    if (result.tapIndex === 2 && document) {
+    if (result.tapIndex === 2) runDiagnostics()
+    if (result.tapIndex === 3 && document) {
       const answer = await Taro.showModal({ title: '移到回收站', content: '确定删除当前文档吗？' })
       if (answer.confirm) { await documentApi.remove(document.id); Taro.navigateBack() }
     }
@@ -571,24 +588,44 @@ export default function DocumentPage() {
           <Textarea className='document-title' autoHeight adjustPosition={false} value={title} placeholder='无标题文档' maxlength={300} showConfirmBar={false} onFocus={() => { keepKeyboardDocked(); setEditorActive(false); requestDockCalibrationRef.current() }} onBlur={scheduleKeyboardDockReset} onInput={event => setTitle(event.detail.value)} />
         </View>
         <View className='document-flow'>
-          <Editor
-            id='kw-document-editor'
-            className='document-editor document-editor--continuous'
-            style={{ height: `${editorHeightRpx(blocks)}rpx` }}
-            placeholder='输入正文…'
-            showImgSize
-            showImgToolbar
-            showImgResize
-            onReady={editorReady}
-            onFocus={() => {
-              keepKeyboardDocked()
-              setEditorActive(true)
-              requestDockCalibrationRef.current()
-            }}
-            onBlur={scheduleKeyboardDockReset}
-            onInput={onEditorInput}
-            onStatusChange={(event: any) => setFormats(event.detail || {})}
-          />
+          {documentFlow(blocks).map((item, flowIndex, flowItems) => {
+            if (item.kind === 'mindmap') {
+              const preview = item.block.mapId ? mapPreviews[item.block.mapId] : ''
+              return <View key={item.key} className='mindmap-interactive' hoverClass='mindmap-interactive--pressed' onClick={() => openMindMapBlock(item.block)}>
+                {preview
+                  ? <Image className='mindmap-interactive__image' src={preview} mode='aspectFit' />
+                  : <View className='mindmap-interactive__fallback'><View className='mindmap-interactive__root'>{item.block.previewLabels?.[0] || item.block.title || '中心主题'}</View></View>}
+                <View className='mindmap-interactive__bar'>
+                  <View>
+                    <Text className='mindmap-interactive__title'>{item.block.title || '未命名思维导图'}</Text>
+                    <Text className='mindmap-interactive__meta'>{item.block.nodeCount || 1} 个主题</Text>
+                  </View>
+                  <View className='mindmap-interactive__open'>进入编辑 →</View>
+                </View>
+              </View>
+            }
+            return <Editor
+              key={item.key}
+              id={`kw-document-${item.key}`}
+              className='document-editor document-editor--continuous'
+              style={{ height: `${editorHeightRpx(item.blocks)}rpx` }}
+              placeholder={flowIndex === flowItems.length - 1 ? '输入正文…' : ''}
+              showImgSize
+              showImgToolbar
+              showImgResize
+              onReady={() => editorReady(item.key, item.blocks)}
+              onFocus={() => {
+                editorRef.current = editorRefs.current[item.key] || editorRef.current
+                activeInsertionIndexRef.current = item.start + item.count
+                keepKeyboardDocked()
+                setEditorActive(true)
+                requestDockCalibrationRef.current()
+              }}
+              onBlur={scheduleKeyboardDockReset}
+              onInput={(event: any) => onEditorInput(item.start, item.count, event)}
+              onStatusChange={(event: any) => setFormats(event.detail || {})}
+            />
+          })}
         </View>
       </View>
       <View className={`document-bottom-space ${dockVisible ? 'dock-visible' : ''}`} />
@@ -649,7 +686,6 @@ export default function DocumentPage() {
         <View onClick={chooseImage}><Text>图片</Text></View>
         <View className={creatingMindMap ? 'disabled' : ''} onClick={insertNewMindMap}><Text>{creatingMindMap ? '创建中…' : '新建导图'}</Text></View>
         <View className={creatingMindMap ? 'disabled' : ''} onClick={importMindMap}><Text>导入导图</Text></View>
-        <View onClick={openMindMap}><Text>打开导图</Text></View>
       </View>
     </View>}
     {mindMapChoices.length > 0 && <View className='insert-mask' onClick={() => setMindMapChoices([])} />}
@@ -667,5 +703,12 @@ export default function DocumentPage() {
       </ScrollView>
     </View>}
     {panel && <DocumentPanels document={document} mode={panel} onClose={() => setPanel(null)} onDocumentChange={hydrate} />}
+    {diagnostics !== '' && <View className='insert-mask' onClick={() => setDiagnostics('')} />}
+    {diagnostics !== '' && <View className='diagnostics-sheet'>
+      <View className='insert-sheet__head'><Text>编辑器诊断</Text><View onClick={() => setDiagnostics('')}>关闭</View></View>
+      <ScrollView className='diagnostics-body' scrollY showScrollbar={false}>
+        <Text selectable userSelect className='diagnostics-text'>{diagnostics}</Text>
+      </ScrollView>
+    </View>}
   </View>
 }
