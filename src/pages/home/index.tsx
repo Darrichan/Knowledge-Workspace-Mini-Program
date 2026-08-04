@@ -1,6 +1,6 @@
 import { Text, View } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Brand from '../../components/Brand'
 import ContentCard from '../../components/ContentCard'
 import { authApi, workspaceApi } from '../../services/api'
@@ -9,21 +9,30 @@ import { openDocument } from '../../services/navigation'
 import type { DocumentItem, User, Workspace } from '../../types/domain'
 import './index.scss'
 
+const cachedWorkspace = Taro.getStorageSync<Workspace>('kw_mini_workspace') || null
+const cachedRecent = Taro.getStorageSync<DocumentItem[]>('kw_mini_recent') || []
+
 export default function HomePage() {
-  const [loading, setLoading] = useState(true)
-  const [workspace, setWorkspace] = useState<Workspace | null>(null)
-  const [recent, setRecent] = useState<DocumentItem[]>([])
+  const [loading, setLoading] = useState(!cachedWorkspace)
+  const [workspace, setWorkspace] = useState<Workspace | null>(cachedWorkspace)
+  const [recent, setRecent] = useState<DocumentItem[]>(cachedRecent)
+  // 已经有缓存数据时不再挡整页转圈——每次切回首页都全屏 loading 是本次要修的问题。
+  const hasLoadedRef = useRef(Boolean(cachedWorkspace))
   const user = Taro.getStorageSync<User>('kw_mini_user')
 
   const load = async () => {
     if (!authApi.hasToken()) return Taro.reLaunch({ url: '/pages/login/index' })
-    setLoading(true)
+    if (!hasLoadedRef.current) setLoading(true)
     try {
-      let spaces = await workspaceApi.list()
+      // recent() 不依赖 list() 的结果，之前是顺序等待，白白多一个云函数往返。
+      const [spacesResult, recentResult] = await Promise.all([workspaceApi.list(), workspaceApi.recent()])
+      let spaces = spacesResult
       if (!spaces.length) spaces = [await workspaceApi.create('我的空间')]
       setWorkspace(spaces[0])
+      setRecent(recentResult)
       Taro.setStorageSync('kw_mini_workspace', spaces[0])
-      setRecent(await workspaceApi.recent())
+      Taro.setStorageSync('kw_mini_recent', recentResult)
+      hasLoadedRef.current = true
     } catch (error) {
       Taro.showToast({ title: (error as Error).message, icon: 'none' })
     } finally { setLoading(false) }
