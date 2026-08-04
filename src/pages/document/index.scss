@@ -339,8 +339,8 @@
 }
 
 .document-bottom-space.dock-visible {
-  /* 正文以图片结尾时也要能滚过工具栏，留出安全区。 */
-  height: calc(260px + env(safe-area-inset-bottom));
+  /* 刚好够把正文最后一行滚到工具栏上方。键盘弹起时由行内样式接管。 */
+  height: calc(172px + env(safe-area-inset-bottom));
 }
 
 .floating-insert {

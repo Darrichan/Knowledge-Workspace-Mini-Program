@@ -57,8 +57,9 @@ const blockHeightRpx = (block: DocumentBlock) => {
 }
 
 const editorHeightRpx = (segmentBlocks: DocumentBlock[], isLast = false) => {
-  // 末段多留一截，既能在图片下方点出光标继续写，也保证滚得到底。
-  const trailingSlack = isLast ? 240 : 0
+  // 末段只留一点余量。能不能在图片下方落光标已经由 withTrailingLine 保证，
+  // 靠留白去撑只会在待办/图片下方堆出一大块空区。
+  const trailingSlack = isLast ? 48 : 0
   if (!segmentBlocks.length) return 72 + trailingSlack
   const contentHeight = segmentBlocks.reduce((total, block) => total + blockHeightRpx(block), 0)
   return Math.max(72, contentHeight + 24) + trailingSlack
@@ -496,10 +497,11 @@ export default function DocumentPage() {
       const mapBlock: DocumentBlock = { id: `${Date.now()}-map`, type: 'mindMapBlock', mapId: map.id, title: map.title, ...summary }
       // 插到光标所在段之后；没聚焦过就追加到文末。
       const insertAt = Math.min(Math.max(0, activeInsertionIndexRef.current || blocksRef.current.length), blocksRef.current.length)
-      const next = [...blocksRef.current.slice(0, insertAt), mapBlock, ...blocksRef.current.slice(insertAt)]
+      const absorbed = absorbBlankBefore(blocksRef.current, insertAt)
+      const next = withTrailingLine([...absorbed.blocks.slice(0, absorbed.insertAt), mapBlock, ...absorbed.blocks.slice(absorbed.insertAt)])
       blocksRef.current = next
       setBlocks(next)
-      activeInsertionIndexRef.current = insertAt + 1
+      activeInsertionIndexRef.current = absorbed.insertAt + 1
       // 预览图失败也不影响卡片出现，卡片会退化成中心主题占位。
       try {
         const preview = await renderMindMapPreview(map, await getPreviewCanvas())
@@ -616,13 +618,23 @@ export default function DocumentPage() {
     removeBlockAt(blockIndex)
   }
 
+  // 插入点前面正好是一个空段落时就占用它的位置，否则待办上方会平白多出一行空白。
+  const absorbBlankBefore = (blocks: DocumentBlock[], insertAt: number) => {
+    const previous = blocks[insertAt - 1]
+    if (insertAt > 0 && previous?.type === 'paragraph' && !(previous.text || '').trim()) {
+      return { blocks: [...blocks.slice(0, insertAt - 1), ...blocks.slice(insertAt)], insertAt: insertAt - 1 }
+    }
+    return { blocks, insertAt }
+  }
+
   const insertTaskBlock = () => {
     const insertAt = Math.min(Math.max(0, activeInsertionIndexRef.current || blocksRef.current.length), blocksRef.current.length)
     const block: DocumentBlock = { id: `${Date.now()}-task`, type: 'taskList', text: '', checkedLines: [false] }
-    const next = [...blocksRef.current.slice(0, insertAt), block, ...blocksRef.current.slice(insertAt)]
+    const absorbed = absorbBlankBefore(blocksRef.current, insertAt)
+    const next = withTrailingLine([...absorbed.blocks.slice(0, absorbed.insertAt), block, ...absorbed.blocks.slice(absorbed.insertAt)])
     blocksRef.current = next
     setBlocks(next)
-    activeInsertionIndexRef.current = insertAt + 1
+    activeInsertionIndexRef.current = absorbed.insertAt + 1
     setInsertOpen(false)
   }
 
@@ -753,7 +765,10 @@ export default function DocumentPage() {
           })}
         </View>
       </View>
-      <View className={`document-bottom-space ${dockVisible ? 'dock-visible' : ''}`} />
+      <View
+        className={`document-bottom-space ${dockVisible ? 'dock-visible' : ''}`}
+        style={keyboardHeight ? { height: `${keyboardHeight + 96}px` } : undefined}
+      />
     </ScrollView>
 
     {!dockVisible && !insertOpen && <View className='floating-insert' onClick={() => { setInsertOpen(true); setEditorActive(true) }}><View className='floating-insert__plus'>+</View><Text>插入内容</Text></View>}
