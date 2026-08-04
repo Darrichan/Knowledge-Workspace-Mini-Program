@@ -383,7 +383,11 @@ export default function DocumentPage() {
       clearDockCalibrationTimers()
       // 原生 Editor 的自动上移和键盘高度事件不在同一帧，
       // 需要覆盖初次弹起、输入法候选栏完成和页面平移收尾。
-      ;[0, 48, 120, 240, 420, 700].forEach(delay => {
+      // 从标题/待办切进正文时，微信对标题那次 focus 做的原生
+      // scroll-into-view 还没完全收干净，会和 Editor 自己的上移
+      // 叠加，700ms 时偶尔还没稳定——工具栏就会跟键盘之间留一条缝。
+      // 后面两个较晚的时间点专门兜底这种叠加还没收敛的情况。
+      ;[0, 48, 120, 240, 420, 700, 1000, 1400].forEach(delay => {
         dockCalibrationTimersRef.current.push(setTimeout(() => calibrateDock(height), delay))
       })
     }
@@ -431,6 +435,15 @@ export default function DocumentPage() {
     if (!keyboardCloseTimerRef.current) return
     clearTimeout(keyboardCloseTimerRef.current)
     keyboardCloseTimerRef.current = null
+  }
+
+  // 从正文（Editor，微信里是独立的原生输入实现）切到标题/待办这类普通 Textarea 时，
+  // 微信经常需要点两下才能真正唤起键盘——第一下只是把上一个 Editor 的原生输入
+  // 收掉，第二下才轮到 Textarea 接手。提前在 touchstart（早于 focus 事件）就把
+  // Editor 失焦，让这次收尾提前完成，Textarea 收到的第一下点击就能正常弹键盘。
+  const blurActiveEditor = () => {
+    if (!contentFocusedRef.current) return
+    editorRef.current?.blur()
   }
 
   const scheduleKeyboardDockReset = () => {
@@ -876,7 +889,7 @@ export default function DocumentPage() {
         键盘"弹起又立刻收起"就是这么来的，删掉即可，不需要替代方案。 */}
     <ScrollView className='document-scroll' scrollY enhanced enableFlex showScrollbar={false}>
       <View className='document-paper'>
-        <View className='document-title-wrap'>
+        <View className='document-title-wrap' onTouchStart={blurActiveEditor}>
           {/* adjustPosition={false} 曾是为了不让微信自己的滚动跟随和工具栏贴键盘逻辑打架，
               但标题已经被 contentFocusedRef 排除在那套逻辑之外了，留着它只剩副作用：
               微信在部分机型上对 adjustPosition=false 的输入框第一次点击只对焦不弹键盘，
@@ -890,7 +903,7 @@ export default function DocumentPage() {
               return <View key={item.key} className='task-block'>
                 {lines.map((line, lineIndex) => {
                   const checked = Boolean(item.block.checkedLines?.[lineIndex])
-                  return <View key={`${item.key}-${lineIndex}`} className={`task-row ${checked ? 'checked' : ''}`}>
+                  return <View key={`${item.key}-${lineIndex}`} className={`task-row ${checked ? 'checked' : ''}`} onTouchStart={blurActiveEditor}>
                     <View className='task-check-hit' onClick={() => toggleTaskLine(item.index, lineIndex)}>
                       <View className='task-check'>{checked ? '✓' : ''}</View>
                     </View>
