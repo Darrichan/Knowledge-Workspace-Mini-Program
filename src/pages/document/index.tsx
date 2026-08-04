@@ -381,15 +381,18 @@ export default function DocumentPage() {
 
     const scheduleDockCalibration = (height: number) => {
       clearDockCalibrationTimers()
-      // 原生 Editor 的自动上移和键盘高度事件不在同一帧，
-      // 需要覆盖初次弹起、输入法候选栏完成和页面平移收尾。
-      // 从标题/待办切进正文时，微信对标题那次 focus 做的原生
-      // scroll-into-view 还没完全收干净，会和 Editor 自己的上移
-      // 叠加，700ms 时偶尔还没稳定——工具栏就会跟键盘之间留一条缝。
-      // 后面两个较晚的时间点专门兜底这种叠加还没收敛的情况。
-      ;[0, 48, 120, 240, 420, 700, 1000, 1400].forEach(delay => {
-        dockCalibrationTimersRef.current.push(setTimeout(() => calibrateDock(height), delay))
-      })
+      // 原生 Editor 的自动上移和键盘高度事件不在同一帧，什么时候真正收尾
+      // 因机型、是否刚从标题/待办切过来（还叠着微信自己的 scroll-into-view）
+      // 而不同——猜固定的几个时间点总有猜不中的情况，工具栏就跟键盘之间
+      // 留一条缝。改成持续轮询到收敛（或到时间上限为止），而不是赌几个时间点。
+      let ticks = 0
+      const maxTicks = 20
+      const tick = () => {
+        calibrateDock(height)
+        ticks += 1
+        if (ticks < maxTicks) dockCalibrationTimersRef.current.push(setTimeout(tick, 90))
+      }
+      tick()
     }
     requestDockCalibrationRef.current = () => {
       const height = keyboardHeightRef.current
@@ -416,8 +419,13 @@ export default function DocumentPage() {
         scheduleDockCalibration(nextHeight)
       } else {
         // 延迟确认真正收起，过滤焦点切换时的短暂 0 高度事件。
+        // 主动 blur 正文来让标题/待办第一下就能弹键盘时（见 blurActiveEditor），
+        // 这次 blur 本身会先触发一次真实的 0 高度事件，随后新字段的 focus
+        // 几乎立刻补上——用比 dockInteractionRef 的 260ms 窗口更长的延迟等
+        // 它，不然工具栏会被误判成键盘收起，先跳一下再被键盘重新弹起盖住。
         clearKeyboardCloseTimer()
-        keyboardCloseTimerRef.current = setTimeout(resetKeyboardLayout, 120)
+        const delay = dockInteractionRef.current ? 320 : 120
+        keyboardCloseTimerRef.current = setTimeout(resetKeyboardLayout, delay)
       }
     }
     Taro.onKeyboardHeightChange(listener)
@@ -441,8 +449,11 @@ export default function DocumentPage() {
   // 微信经常需要点两下才能真正唤起键盘——第一下只是把上一个 Editor 的原生输入
   // 收掉，第二下才轮到 Textarea 接手。提前在 touchstart（早于 focus 事件）就把
   // Editor 失焦，让这次收尾提前完成，Textarea 收到的第一下点击就能正常弹键盘。
+  // 这次主动 blur 会先产生一次真实的 0 高度事件，必须靠 preserveDockDuringAction
+  // 挡住工具栏被误判成键盘收起——不挡的话工具栏会先跳一下再被键盘重新盖住。
   const blurActiveEditor = () => {
     if (!contentFocusedRef.current) return
+    preserveDockDuringAction()
     editorRef.current?.blur()
   }
 
