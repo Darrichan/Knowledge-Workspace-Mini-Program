@@ -364,34 +364,24 @@ export default function DocumentPage() {
 
     const calibrateDock = (height: number) => {
       if (height <= 0 || keyboardHeightRef.current <= 0) return
-      // h/sH 算出来的 desiredTop 跟实测 currentTop 已经完全吻合（上一轮诊断
-      // Δ=0），但用户仍然看到缝隙——说明问题不在校正循环本身收不收敛，而在
-      // sH（挂载时测的、假设键盘弹起也不变的视口高度）这个前提是否成立。
-      // 这次额外测两个独立信号：keyboard-open 时 getWindowInfo 实时高度是否
-      // 真的还是 sH；以及页面根节点（非 fixed）的 top 有没有被一起上移，
-      // 上移了多少——两者能直接说明是 sH 假设错了还是原生位移量本身跟
-      // height 对不上。
-      const liveWindowHeight = Math.max(0, Number(Taro.getWindowInfo().windowHeight) || 0)
-      Taro.createSelectorQuery().select('#kw-editor-dock').boundingClientRect(rect => {
-        Taro.createSelectorQuery().select('#kw-document-root').boundingClientRect(rootRect => {
-        if (!rect || keyboardHeightRef.current <= 0) return
-        const dockHeight = Math.max(0, Number(rect.height) || 0)
-        const currentTop = Number(rect.top)
-        const stableHeight = stableWindowHeightRef.current
-        if (!stableHeight || !Number.isFinite(currentTop) || !dockHeight) return
-
-        // 中间段原生 Editor 获得焦点时，微信会把页面整体上移；
-        // fixed: bottom=0 也会跟着错位。用稳定视口高度和键盘
-        // 真实高度算出键盘上沿，再根据实际位置迭代校正。
-        const desiredTop = Math.max(0, stableHeight - height - dockHeight)
-        const delta = desiredTop - currentTop
-        // 临时诊断：标题切正文仍有缝隙，光靠猜测已经改了两版都没解决，
-        // 这次把每次校准的实测数据显示出来，下一轮直接读数据而不是继续猜。
-        const rootTop = rootRect ? Number((rootRect as any).top) : NaN
-        setDockDebug(`h=${height} sH=${stableHeight} liveWH=${liveWindowHeight} rootTop=${Number.isFinite(rootTop) ? rootTop.toFixed(1) : 'NA'} top=${currentTop.toFixed(1)} dH=${dockHeight.toFixed(1)} want=${desiredTop.toFixed(1)} Δ=${delta.toFixed(1)} corr=${dockCorrectionRef.current.toFixed(1)}`)
-        if (Math.abs(delta) < .5) return
-        updateDockCorrection(dockCorrectionRef.current + delta)
-        }).exec()
+      // 上一版诊断证实了根因：liveWH 跟 sH 一直相等（视口高度假设没问题），
+      // 但页面根节点（fixed、id=kw-document-root）实测的上移量（rootTop）
+      // 远小于键盘高度、且随光标在文档里的位置变化——微信的 adjustPosition
+      // 默认开着，只把页面（连带 fixed 元素）挪到刚好露出光标为止，挪动量
+      // 跟键盘高度并不是一回事。旧公式假设"没挪动过"（自然位置=稳定高度-
+      // 工具栏高度），再整体减去键盘高度去凑，凑的量跟微信实际已经挪过的量
+      // 对不上，两个坐标系打架，才会一直有缝隙或不同机型/位置下表现不一致。
+      // 现在直接用实测到的 rootTop 反推：工具栏最终位置 = 未做任何校正时的
+      // 位置 + rootTop（原生位移，跟其它元素一样"被带偏"）+ 校正量，要让它
+      // 落在"稳定高度 - 键盘高度 - 工具栏高度"，两个式子里稳定高度和工具栏
+      // 高度都会消掉，校正量直接等于 -(键盘高度 + rootTop)，不用再猜、不用
+      // 再迭代收敛。
+      Taro.createSelectorQuery().select('#kw-document-root').boundingClientRect(rootRect => {
+        if (!rootRect || keyboardHeightRef.current <= 0) return
+        const rootTop = Number((rootRect as any).top) || 0
+        const correction = -(height + rootTop)
+        setDockDebug(`h=${height} rootTop=${rootTop.toFixed(1)} corr=${correction.toFixed(1)} prevCorr=${dockCorrectionRef.current.toFixed(1)}`)
+        updateDockCorrection(correction)
       }).exec()
     }
 
