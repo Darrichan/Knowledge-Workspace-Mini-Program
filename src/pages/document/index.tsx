@@ -31,6 +31,15 @@ const wrappedLineCount = (text = '', charactersPerLine = 21) => {
   return lines.reduce((total, line) => total + Math.max(1, Math.ceil(Array.from(line).length / charactersPerLine)), 0)
 }
 
+// 各级标题的字号不同，每行能容纳的字数和行高都跟着变。页面 wxss 进不到编辑器
+// 内部，实际字号由微信决定，所以这里一律往宽了取。
+const headingMetric = (level = 2) => {
+  if (level <= 1) return { charsPerLine: 11, lineHeight: 110 }
+  if (level === 2) return { charsPerLine: 14, lineHeight: 88 }
+  if (level === 3) return { charsPerLine: 17, lineHeight: 72 }
+  return { charsPerLine: 19, lineHeight: 62 }
+}
+
 // 微信原生 Editor 默认会形成独立滚动区。按内容预留完整高度，避免正文段
 // 与页面最外层 ScrollView 同时滚动。
 // 正文栏宽度：750rpx 减去 document-paper 左右各 18rpx 的内边距。
@@ -50,8 +59,14 @@ const blockHeightRpx = (block: DocumentBlock) => {
   }
   if (block.type === 'mindMapBlock') return 620
   if (block.type === 'horizontalRule') return 72
+  if (block.type === 'heading') {
+    // 标题字号远大于正文，一行塞不下 21 个字。按正文口径估算会严重少算行数，
+    // 内容溢出编辑器盒子后会和下方的待办/导图叠在一起，而且溢出的部分点不到
+    // 光标。这里对每一级都往宽了留 —— 少算是功能问题，多算只是留白。
+    const metric = headingMetric(block.level)
+    return Math.max(metric.lineHeight, wrappedLineCount(block.text || '', metric.charsPerLine) * metric.lineHeight) + 20
+  }
   const visualLines = wrappedLineCount(block.text || '', block.type === 'codeBlock' ? 18 : 21)
-  if (block.type === 'heading') return Math.max(76, visualLines * 70)
   if (block.type === 'codeBlock') return Math.max(72, visualLines * 52) + 24
   if (block.type === 'blockquote') return Math.max(62, visualLines * 54) + 20
   if (block.type === 'bulletList' || block.type === 'orderedList') return Math.max(58, visualLines * 56)
