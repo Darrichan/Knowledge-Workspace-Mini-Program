@@ -64,6 +64,8 @@ export function contentToBlocks(content?: Record<string, any>): DocumentBlock[] 
     if (node.type === 'paragraph') {
       const style = styleOf(node)
       const text = textOf(node)
+      const task = text.match(/^([☐☑])\s*(.*)$/s)
+      if (task) return { ...base, type: 'taskList', text: task[2], checkedLines: [task[1] === '☑'] }
       const markdownHeading = text.match(/^(#{1,6})\s+(.+)$/)
       if (markdownHeading) return { ...base, type: 'heading', text: markdownHeading[2], level: markdownHeading[1].length }
       const bullet = text.match(/^[-*+]\s+(.+)$/)
@@ -85,7 +87,19 @@ export function contentToBlocks(content?: Record<string, any>): DocumentBlock[] 
     if (node.type === 'blockquote') return { ...base, type: 'blockquote', text: textOf(node) }
     if (node.type === 'codeBlock') return { ...base, type: 'codeBlock', text: textOf(node), language: stringValue(node.attrs?.language, 'plaintext') }
     if (node.type === 'horizontalRule') return { ...base, type: 'horizontalRule' }
-    if (node.type === 'bulletList' || node.type === 'orderedList') return { ...base, type: node.type, text: listLines(node) }
+    if (node.type === 'bulletList' || node.type === 'orderedList') {
+      const lines = listLines(node).split('\n')
+      const tasks = lines.map(line => line.match(/^([☐☑])\s*(.*)$/s))
+      if (tasks.length && tasks.every(Boolean)) {
+        return {
+          ...base,
+          type: 'taskList',
+          text: tasks.map(match => match?.[2] || '').join('\n'),
+          checkedLines: tasks.map(match => match?.[1] === '☑')
+        }
+      }
+      return { ...base, type: node.type, text: lines.join('\n') }
+    }
     if (node.type === 'taskList') return { ...base, type: 'taskList', text: listLines(node), checkedLines: (node.content || []).map((item: any) => Boolean(item.attrs?.checked)) }
     if (node.type === 'image') {
       const originalSrc = stringValue(node.attrs?.['data-original-src'])

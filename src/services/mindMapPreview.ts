@@ -175,8 +175,21 @@ export async function renderMindMapPreview(item: MindMapItem, canvasNode?: any):
   await new Promise(resolve => setTimeout(resolve, 32))
 
   let source = ''
-  // 微信 Editor 只接受文件路径；直接读取像素并写入本地 PNG，避免各基础库导出 API 差异。
-  if (Taro.env.USER_DATA_PATH && typeof ctx.getImageData === 'function') {
+  // 微信 Editor 的 insertImage 只接受 http(s)/base64/云图片/临时文件，
+  // USER_DATA_PATH 下的本地文件不在其列，所以必须优先产出真正的临时文件。
+  if (canvasNode) {
+    try {
+      source = await Promise.race([
+        new Promise<string>((resolve, reject) => Taro.canvasToTempFilePath({
+          canvas, width: WIDTH, height: HEIGHT, destWidth: WIDTH, destHeight: HEIGHT, fileType: 'png', quality: .86,
+          success: result => resolve(result.tempFilePath), fail: reject
+        })),
+        new Promise<string>((_, reject) => setTimeout(() => reject(new Error('导图预览导出超时')), 3000))
+      ])
+    } catch {}
+  }
+  // 导出接口在个别基础库上不稳，回退到自绘 PNG 落盘（可供 Image 组件显示）。
+  if (!source && Taro.env.USER_DATA_PATH && typeof ctx.getImageData === 'function') {
     try {
       const pixels = ctx.getImageData(0, 0, WIDTH, HEIGHT).data as Uint8ClampedArray
       const safeId = String(item.id || 'map').replace(/[^a-z0-9_-]/gi, '').slice(0, 32)
@@ -184,18 +197,6 @@ export async function renderMindMapPreview(item: MindMapItem, canvasNode?: any):
       const png = encodePng(pixels, WIDTH, HEIGHT)
       Taro.getFileSystemManager().writeFileSync(filePath, png.buffer)
       source = filePath
-    } catch {}
-  }
-  // 部分基础库没有 toDataURL，再回退到微信原生导出接口。
-  if (!source && canvasNode) {
-    try {
-      source = await Promise.race([
-        new Promise<string>((resolve, reject) => Taro.canvasToTempFilePath({
-          canvas, width: WIDTH, height: HEIGHT, destWidth: WIDTH, destHeight: HEIGHT, fileType: 'png', quality: .86,
-          success: result => resolve(result.tempFilePath), fail: reject
-        })),
-        new Promise<string>((_, reject) => setTimeout(() => reject(new Error('导图预览导出超时')), 1600))
-      ])
     } catch {}
   }
   if (!source) throw new Error('导图概览生成失败')

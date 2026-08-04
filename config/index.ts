@@ -38,6 +38,17 @@ export default defineConfig<'vite'>(async (merge, { command, mode }) => {
 
           }
         },
+        // postcss-html-transform 会把 ul/li/img/input 这类纯 HTML 标签选择器改写成
+        // .h5-ul/.h5-li/…，并且把任何含 * 的规则整条删除。它服务的是 Taro 渲染裸
+        // HTML 的场景，本项目全部使用 @tarojs/components，用不到。
+        // 但 document 页需要给微信 <editor> 内部由 Quill 渲染的真实 ul/li/img 写样式
+        // （待办复选框、编辑器内图片尺寸），被改写后规则会静默失效——待办列表显示成
+        // 圆点就是这么来的。因此这里关掉它。
+        // 注意：关掉后含 * 的规则不再被自动剔除，而 WXSS 本身不支持通配符，写样式时
+        // 请勿使用 * 选择器。
+        htmltransform: {
+          enable: false
+        },
         cssModules: {
           enable: false, // 默认为 false，如需使用 css modules 功能，则设为 true
           config: {

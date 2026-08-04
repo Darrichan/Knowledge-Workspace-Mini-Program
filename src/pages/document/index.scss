@@ -105,17 +105,11 @@
 }
 
 .document-flow {
+  position: relative;
   min-height: 0;
 }
 
-.document-editor--segment {
-  min-height: 88px;
-  overflow: visible;
-}
-
-.document-editor--last {
-  min-height: 112px;
-}
+.document-editor--continuous { min-height: 240px; overflow: visible; }
 
 .document-editor::before {
   color: #a0abba;
@@ -129,8 +123,10 @@
   overflow: visible !important;
 }
 
+/* editor 内部的图片是微信渲染的真实 <img>，不是 Taro 的 <Image> 组件，
+   两种都要覆盖到。 */
 .document-editor image,
-.document-editor img {
+.document-editor .ql-editor img {
   max-width: 100%;
   height: auto;
   max-height: 184px;
@@ -140,147 +136,135 @@
   background: #f1f4f8;
 }
 
-.task-block {
-  margin: 12px 0 22px;
+/* 微信 <editor> 不自带 Quill 的勾选列表样式表，不补这段的话 <ul data-checked>
+   会退回浏览器默认的 list-style: disc，待办就显示成一个圆点。
+
+   这里必须写真实的 ul / li 标签名才能命中 <editor> 内部由微信渲染的 DOM，
+   因此 config/index.ts 里关掉了 postcss-html-transform（它会把 ul/li 改写成
+   .h5-ul/.h5-li，并且会把含 * 的规则整条删除）。改这段前先看那里的注释。
+   结构参考微信官方 editor.wxss，同时兼容 Quill 1.x (ul[data-checked] > li)
+   与 Quill 2.x (li[data-list=checked]) 两种标记。 */
+.document-editor .ql-editor ul[data-checked=true],
+.document-editor .ql-editor ul[data-checked=false] {
+  padding-left: 0;
+  list-style: none;
+  /* 点击穿透到下层 contenteditable 正常落光标，只有复选框自己拦截点击 */
+  pointer-events: none;
 }
 
-.task-row {
-  min-height: 82px;
-  display: flex;
-  align-items: center;
-  color: #2b3d55;
+.document-editor .ql-editor ul[data-checked=true] > li,
+.document-editor .ql-editor ul[data-checked=false] > li,
+.document-editor .ql-editor li[data-list=checked],
+.document-editor .ql-editor li[data-list=unchecked] {
+  position: relative;
+  padding-left: 46px;
+  list-style: none;
 }
 
-.task-check-hit {
-  width: 72px;
-  height: 72px;
-  margin-right: 12px;
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
+.document-editor .ql-editor ul[data-checked=true] > li span,
+.document-editor .ql-editor ul[data-checked=false] > li span {
+  pointer-events: all;
 }
 
-.task-check {
-  width: 48px;
-  height: 48px;
+/* 未勾选：描边空框 */
+.document-editor .ql-editor ul[data-checked=true] > li::before,
+.document-editor .ql-editor ul[data-checked=false] > li::before,
+.document-editor .ql-editor li[data-list=checked]::before,
+.document-editor .ql-editor li[data-list=unchecked]::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 12px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   border: 3px solid #8190a4;
-  border-radius: 14px;
+  border-radius: 7px;
+  background: #fff;
   box-sizing: border-box;
-  font-size: 30px;
+  pointer-events: all;
+  font-size: 21px;
   font-weight: 900;
   line-height: 1;
 }
 
-.task-row.checked .task-check {
+/* 已勾选：雾蓝实心 + 白勾 */
+.document-editor .ql-editor ul[data-checked=true] > li::before,
+.document-editor .ql-editor li[data-list=checked]::before {
+  content: '\2713';
   border-color: #5f83cd;
   background: #5f83cd;
 }
 
-.task-text {
-  min-height: 72px;
-  padding: 7px 0;
-  flex: 1;
-  color: #2b3d55;
-  font-size: 36px;
-  line-height: 1.5;
-}
-
-.task-row.checked .task-text {
+.document-editor .ql-editor ul[data-checked=true] > li,
+.document-editor .ql-editor li[data-list=checked] {
   color: #8b98a8;
   text-decoration: line-through;
 }
 
-.mindmap-interactive {
-  margin: 10px 0 22px;
-  overflow: hidden;
-  border: 2px solid #dce5f1;
-  border-radius: 16px;
-  background: #f8faff;
-  box-shadow: 0 6px 18px rgba(47, 68, 99, .07);
+.mindmap-picker {
+  max-height: 72vh;
 }
 
-.mindmap-interactive--pressed {
-  opacity: .78;
-  transform: scale(.995);
+.mindmap-picker__list {
+  max-height: 56vh;
 }
 
-.mindmap-interactive__image {
-  width: 100%;
-  height: 300px;
-  display: block;
-  background: #f8faff;
-  object-fit: contain;
-}
-
-.mindmap-interactive__fallback {
-  height: 300px;
-  padding: 30px;
+.mindmap-picker__item {
+  min-height: 104px;
+  padding: 16px 24px;
   display: flex;
   align-items: center;
-  background-image: radial-gradient(#dce5f3 2px, transparent 2px);
-  background-size: 24px 24px;
+  gap: 18px;
+  border-bottom: 1px solid #edf1f6;
+  box-sizing: border-box;
 }
 
-.mindmap-interactive__root {
-  min-width: 190px;
-  padding: 20px 26px;
-  color: #fff;
-  background: #607fd0;
-  border: 3px solid #344258;
-  border-radius: 18px;
-  font-size: 28px;
-  font-weight: 800;
-}
-
-.mindmap-interactive__bar {
-  min-height: 68px;
-  padding: 10px 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  background: #fff;
-  border-top: 1px solid #e3e9f2;
-}
-
-.mindmap-interactive__bar > view:first-child {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.mindmap-interactive__title {
-  overflow: hidden;
-  color: #263851;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 23px;
-  font-weight: 800;
-}
-
-.mindmap-interactive__meta {
-  color: #8a98aa;
-  font-size: 18px;
-}
-
-.mindmap-interactive__open {
-  min-width: 122px;
-  height: 48px;
-  padding: 0 14px;
+.mindmap-picker__icon {
+  width: 58px;
+  height: 58px;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  background: #5f83cd;
-  border-radius: 13px;
-  font-size: 20px;
+  color: #5879c4;
+  background: #eaf0fc;
+  border-radius: 15px;
+  font-size: 24px;
   font-weight: 800;
+}
+
+.mindmap-picker__text {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.mindmap-picker__text text:first-child {
+  overflow: hidden;
+  color: #24364d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.mindmap-picker__text text:last-child {
+  overflow: hidden;
+  color: #8b98a9;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 20px;
+}
+
+.mindmap-picker__arrow {
+  color: #a7b1bf;
+  font-size: 38px;
 }
 
 .document-bottom-space {

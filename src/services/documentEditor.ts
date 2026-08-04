@@ -28,11 +28,12 @@ const inlineAttributes = (block: DocumentBlock) => ({
   ...(block.type === 'link' && block.url ? { link: block.url } : {})
 })
 
-const lineAttributes = (block: DocumentBlock) => {
+const lineAttributes = (block: DocumentBlock, lineIndex = 0) => {
   if (block.type === 'heading') return { header: Math.min(6, Math.max(1, block.level || 2)) }
   if (block.type === 'bulletList') return { list: 'bullet' }
   if (block.type === 'orderedList') return { list: 'ordered' }
-  if (block.type === 'taskList') return {}
+  // 微信 Editor 原生支持勾选列表，勾选态由行属性表达，正文不再混入 ☐/☑ 字符。
+  if (block.type === 'taskList') return { list: block.checkedLines?.[lineIndex] ? 'checked' : 'unchecked' }
   if (block.type === 'blockquote') return { blockquote: true }
   if (block.type === 'codeBlock') return { 'code-block': block.language || true }
   return {}
@@ -64,11 +65,15 @@ export async function blocksToEditorDelta(
     if (block.type === 'mindMapBlock') {
       const localSrc = resolveMindMapPreview ? await resolveMindMapPreview(block) : ''
       if (localSrc) {
-        imageLookup[localSrc] = {
+        const alt = `思维导图：${block.title || '未命名思维导图'}`
+        const source: EditorImageSource = {
           kind: 'mindMap', src: localSrc, alt: `思维导图：${block.title || '未命名思维导图'}`,
           mapId: block.mapId, title: block.title, nodeCount: block.nodeCount, previewLabels: block.previewLabels
         }
-        ops.push({ insert: { image: localSrc }, attributes: { alt: `思维导图：${block.title || '未命名思维导图'}`, 'data-local': localSrc } })
+        imageLookup[localSrc] = source
+        imageLookup[alt] = source
+        if (block.mapId) imageLookup[block.mapId] = source
+        ops.push({ insert: { image: localSrc }, attributes: { alt, 'data-local': localSrc, 'data-custom': `kind=mindMap;mapId=${block.mapId || ''}` } })
       } else {
         ops.push({ insert: `思维导图 · ${block.title || '未命名思维导图'}`, attributes: { bold: true, color: '#5377ba', link: `kw-mindmap://${block.mapId || ''}` } })
       }
@@ -78,9 +83,8 @@ export async function blocksToEditorDelta(
 
     const lines = (block.text || '').split('\n')
     lines.forEach((line, index) => {
-      const visibleLine = block.type === 'taskList' ? `${block.checkedLines?.[index] ? '☑' : '☐'} ${line}` : line
-      if (visibleLine) ops.push({ insert: visibleLine, attributes: inlineAttributes(block) })
-      ops.push({ insert: '\n', attributes: lineAttributes(block) })
+      if (line) ops.push({ insert: line, attributes: inlineAttributes(block) })
+      ops.push({ insert: '\n', attributes: lineAttributes(block, index) })
     })
   }
 
@@ -91,7 +95,9 @@ export async function blocksToEditorDelta(
 const makeId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 
 function blockFromLine(text: string, inline: Record<string, any>, line: Record<string, any>): DocumentBlock {
-  const taskMatch = text.match(/^([☐☑])\s*(.*)$/s)
+  const nativeTask = line.list === 'check' || line.list === 'checked' || line.list === 'unchecked' || typeof line.checked === 'boolean'
+  // 旧文档的待办是存成正文里的 ☐/☑ 字符的，只有缺少原生行属性时才按这条迁移。
+  const taskMatch = nativeTask ? null : text.match(/^([☐☑])\s*(.*)$/s)
   if (taskMatch) {
     return {
       id: makeId(), type: 'taskList', text: taskMatch[2],
@@ -112,7 +118,7 @@ function blockFromLine(text: string, inline: Record<string, any>, line: Record<s
     ...(inline.color ? { color: inline.color } : {})
   }
   if (typeof inline.link === 'string' && inline.link.startsWith('kw-mindmap://')) {
-    return { id: base.id, type: 'mindMapBlock', mapId: inline.link.slice('kw-mindmap://'.length), title: text.replace(/^↗\s*思维导图\s*·\s*/, '') || '未命名思维导图', nodeCount: 1 }
+    return { id: base.id, type: 'mindMapBlock', mapId: inline.link.slice('kw-mindmap://'.length), title: text.replace(/^↗?\s*思维导图\s*·\s*/, '') || '未命名思维导图', nodeCount: 1 }
   }
   if (line.header) return { ...base, type: 'heading', level: Number(String(line.header).replace(/\D/g, '')) || 2 }
   if (line.list === 'bullet') return { ...base, type: 'bulletList' }
@@ -143,11 +149,15 @@ export function editorDeltaToBlocks(delta: EditorDelta | undefined, imageLookup:
       if (op.insert.image) {
         if (lineText) flushLine()
         const local = op.insert.image
-        const source = imageLookup[local] || imageLookup[String(op.attributes?.['data-local'] || '')]
-        if (source?.kind === 'mindMap') {
+        const customData = String(op.attributes?.['data-custom'] || '')
+        const customMapId = customData.split(';').map(item => item.split('=')).find(([key]) => key === 'mapId')?.[1] || ''
+        const alt = String(op.attributes?.alt || '')
+        const source = imageLookup[local] || imageLookup[String(op.attributes?.['data-local'] || '')] || imageLookup[customMapId] || imageLookup[alt]
+        const isMindMap = source?.kind === 'mindMap' || customData.split(';').some(item => item === 'kind=mindMap')
+        if (isMindMap && (source?.mapId || customMapId)) {
           blocks.push({
-            id: makeId(), type: 'mindMapBlock', mapId: source.mapId || '', title: source.title || '未命名思维导图',
-            nodeCount: source.nodeCount || 1, previewLabels: source.previewLabels || []
+            id: makeId(), type: 'mindMapBlock', mapId: source?.mapId || customMapId, title: source?.title || alt.replace(/^思维导图：/, '') || '未命名思维导图',
+            nodeCount: source?.nodeCount || 1, previewLabels: source?.previewLabels || []
           })
           continue
         }

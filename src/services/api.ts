@@ -161,14 +161,56 @@ export const mindMapApi = {
   deleteVersion: (documentId: string, mapId: string, versionId: string) => request<void>(`/documents/${documentId}/mind-maps/${mapId}/versions/${versionId}`, { method: 'DELETE' })
 }
 
+// 云函数单次调用的 event 体积有硬上限，base64 还会把字节数放大约 4/3。
+// 700KB 原始字节 ≈ 934KB base64，留足余量。
+const CLOUD_UPLOAD_MAX_BYTES = 700 * 1024
+// 逐级降尺寸 + 降质，够小就立刻停手，不做无谓的有损处理。
+const CLOUD_UPLOAD_STEPS = [
+  { width: 1600, quality: 72 },
+  { width: 1280, quality: 62 },
+  { width: 960, quality: 52 }
+]
+
+const fileSizeOf = async (filePath: string) => {
+  try {
+    const info = await Taro.getFileInfo({ filePath })
+    return Number((info as unknown as { size?: number })?.size) || 0
+  } catch { return 0 }
+}
+
+/** 把图片压到云函数 event 装得下的体积。已经够小的原样返回。 */
+async function fitImageForCloudUpload(filePath: string) {
+  const originalSize = await fileSizeOf(filePath)
+  if (originalSize && originalSize <= CLOUD_UPLOAD_MAX_BYTES) return filePath
+
+  let naturalWidth = 0
+  try { naturalWidth = Number((await Taro.getImageInfo({ src: filePath })).width) || 0 } catch {}
+
+  let best = filePath
+  for (const step of CLOUD_UPLOAD_STEPS) {
+    // 只缩不放：小图按原宽重编码即可，放大既无意义又会变重。
+    const compressedWidth = naturalWidth ? Math.min(naturalWidth, step.width) : step.width
+    try {
+      best = (await Taro.compressImage({ src: filePath, compressedWidth, quality: step.quality })).tempFilePath
+    } catch { break }
+    const size = await fileSizeOf(best)
+    if (size && size <= CLOUD_UPLOAD_MAX_BYTES) return best
+  }
+  const finalSize = await fileSizeOf(best)
+  // quality 仅对 jpg 生效，PNG/WebP 只能靠缩放减重，压不下来时如实报错。
+  if (finalSize > CLOUD_UPLOAD_MAX_BYTES) throw new Error('图片过大，请裁剪后再上传')
+  return best
+}
+
 async function uploadDocumentImage(documentId: string, filePath: string, name: string): Promise<UploadedAsset> {
   const token = Taro.getStorageSync<string>(TOKEN_KEY)
   const extension = name.split('.').pop()?.toLowerCase() || 'jpg'
   const mimeTypes: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif' }
   const contentType = mimeTypes[extension] || 'image/jpeg'
   if (API_MODE === 'cloud') {
+    const uploadPath = await fitImageForCloudUpload(filePath)
     const base64 = await new Promise<string>((resolve, reject) => {
-      Taro.getFileSystemManager().readFile({ filePath, encoding: 'base64', success: result => resolve(String(result.data)), fail: reject })
+      Taro.getFileSystemManager().readFile({ filePath: uploadPath, encoding: 'base64', success: result => resolve(String(result.data)), fail: reject })
     })
     const cloudResult = await Taro.cloud.callFunction({ name: CLOUD_FUNCTION, data: { path: `/documents/${documentId}/assets`, method: 'POST', token, binaryBase64: base64, contentType, fileName: name } })
     const result = cloudResult.result as { statusCode?: number; data?: UploadedAsset; error?: { message?: string } } | undefined
