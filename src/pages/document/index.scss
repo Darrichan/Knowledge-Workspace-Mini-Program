@@ -94,8 +94,10 @@
 
 .document-editor {
   width: 100%;
-  min-height: 88px;
-  padding: 4px 0 20px;
+  /* 高度由 index.tsx 按内容逐段算好并以行内样式给出，这里再设最小高度只会
+     在待办/导图相邻的段上撑出删不掉的空白。 */
+  min-height: 0;
+  padding: 2px 0 6px;
   overflow: visible;
   color: #33445a;
   background: transparent;
@@ -109,7 +111,7 @@
   min-height: 0;
 }
 
-.document-editor--continuous { min-height: 240px; overflow: visible; }
+.document-editor--continuous { overflow: visible; }
 
 .document-editor::before {
   color: #a0abba;
