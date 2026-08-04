@@ -202,6 +202,9 @@ export default function DocumentPage() {
   const rpxPerPxRef = useRef(750 / Math.max(1, Number(Taro.getWindowInfo().windowWidth) || 375))
   // 已量出的图片尺寸，按图片地址缓存，避免重复 getImageInfo。
   const imageSizeRef = useRef<Record<string, { width: number; height: number }>>({})
+  // 已下载的图片本地路径。重刷段落时不再重新走网络，否则 setContents 会拖到
+  // 几秒后才落地，把用户刚点进去的输入框焦点抢走。
+  const localPathCacheRef = useRef<Record<string, string>>({})
   // 每段编辑器的实测高度（px）。微信没有读取 editor 内容高度的接口，
   // 这里把 onInput 给出的 html 渲染到屏幕外的镜像节点上量出来。
   const [measuredHeights, setMeasuredHeights] = useState<Record<string, number>>({})
@@ -251,9 +254,11 @@ export default function DocumentPage() {
     try {
       const prepared = await blocksToEditorDelta(nextBlocks, async block => {
         const key = block.src || block.thumbnail || ''
+        const cached = key ? localPathCacheRef.current[key] : ''
+        if (cached) return cached
         try {
           const localPath = await downloadAssetFile(block.thumbnail || block.src)
-          if (key && localPath) measured[key] = localPath
+          if (key && localPath) { measured[key] = localPath; localPathCacheRef.current[key] = localPath }
           return localPath
         } catch { return block.thumbnail || block.src || '' }
       })
@@ -738,11 +743,12 @@ export default function DocumentPage() {
   }
 
 
-  /** 把所有已挂载的编辑器段按新的 blocks 重刷。结构性插入后段的划分会变，
-      不重刷的话原有段仍显示旧内容。 */
-  const reloadSegments = async (nextBlocks: DocumentBlock[]) => {
+  /** 重刷受结构变化影响的编辑器段。段的划分变了，原有段仍显示旧内容。
+      只刷改动位置之后的段 —— 全刷会对没变的段也调 setContents，而 setContents
+      落地时会抢走焦点，用户此刻可能已经在别处打字了。 */
+  const reloadSegments = async (nextBlocks: DocumentBlock[], fromIndex = 0) => {
     for (const item of documentFlow(nextBlocks)) {
-      if (item.kind !== 'editor') continue
+      if (item.kind !== 'editor' || item.start + item.count <= fromIndex) continue
       const context = editorRefs.current[item.key]
       if (context) await loadBlocksIntoEditor(context, item.blocks, item.key)
     }
@@ -789,7 +795,7 @@ export default function DocumentPage() {
           blocksRef.current = next
           setBlocks(next)
           activeInsertionIndexRef.current = segment.start + markerIndex + head.length + 1
-          void reloadSegments(next)
+          void reloadSegments(next, segment.start)
         },
         fail: () => { appendFallback() }
       }),
@@ -884,6 +890,9 @@ export default function DocumentPage() {
                         showConfirmBar={false}
                         adjustPosition={false}
                         onFocus={() => {
+                          // 焦点在待办行上，不属于任何编辑器段；不清掉的话按光标
+                          // 插入会往上一个聚焦过的编辑器里塞标记。
+                          activeSegmentRef.current = null
                           activeInsertionIndexRef.current = item.index + 1
                           keepKeyboardDocked()
                           setEditorActive(true)
