@@ -194,6 +194,8 @@ export default function DocumentPage() {
   // 光标所在段的末尾位置，新导图插在这里而不是永远追加到文末。
   const activeInsertionIndexRef = useRef(0)
   const previewAttemptedRef = useRef<Set<string>>(new Set())
+  // boundingClientRect 返回 px，样式统一用 rpx，这里存换算比例。
+  const rpxPerPxRef = useRef(750 / Math.max(1, Number(Taro.getWindowInfo().windowWidth) || 375))
   // 已量出的图片尺寸，按图片地址缓存，避免重复 getImageInfo。
   const imageSizeRef = useRef<Record<string, { width: number; height: number }>>({})
   // 每段编辑器的实测高度（px）。微信没有读取 editor 内容高度的接口，
@@ -403,6 +405,7 @@ export default function DocumentPage() {
       Taro.offKeyboardHeightChange(listener)
       if (keyboardCloseTimerRef.current) clearTimeout(keyboardCloseTimerRef.current)
       if (dockInteractionTimerRef.current) clearTimeout(dockInteractionTimerRef.current)
+      Object.values(measureTimersRef.current).forEach(timer => clearTimeout(timer))
       clearDockCalibrationTimers()
       requestDockCalibrationRef.current = () => {}
     }
@@ -457,13 +460,22 @@ export default function DocumentPage() {
     }, 120)
   }
 
-  // 实测到高度就用实测值（再加上图片的精确高度和一点余量），否则退回估算。
+  // 镜像用的是 .document-editor 的字号，编辑器内部实际字号由微信决定，两者未必
+  // 完全一致，所以留一点安全系数。
+  const MEASURE_SAFETY = 1.04
   const segmentHeightStyle = (item: { key: string; blocks: DocumentBlock[] }, isLast: boolean) => {
-    const measured = measuredHeights[item.key]
-    if (!measured) return { height: `${editorHeightRpx(item.blocks, isLast)}rpx` }
+    const estimateRpx = editorHeightRpx(item.blocks, isLast)
+    const measuredPx = measuredHeights[item.key]
+    if (!measuredPx) return { height: `${estimateRpx}rpx` }
+    // 图片不参与镜像测量（rich-text 排不出编辑器里的效果），用 getImageInfo
+    // 量出的精确高度单独加上。
     const imageRpx = item.blocks.reduce((total, block) => total + (block.type === 'image' ? blockHeightRpx(block) : 0), 0)
-    const slackRpx = (isLast ? 120 : 0) + 40
-    return { height: `calc(${measured}px + ${imageRpx + slackRpx}rpx)` }
+    const textRpx = measuredPx * rpxPerPxRef.current * MEASURE_SAFETY
+    // rich-text 渲染失败或只渲染了一部分时高度会异常偏小，这种值不能信，
+    // 否则又会溢出重合。明显低于估算就判定不可信，退回估算。
+    if (textRpx + imageRpx < estimateRpx * 0.45) return { height: `${estimateRpx}rpx` }
+    const slackRpx = (isLast ? 120 : 0) + 32
+    return { height: `${Math.ceil(textRpx + imageRpx + slackRpx)}rpx` }
   }
 
   const editorReady = (key: string, segmentBlocks: DocumentBlock[]) => {
@@ -775,6 +787,7 @@ export default function DocumentPage() {
   if (!document) return <View className='loading-screen'><View className='loading-ring' /><Text>正在打开内容</Text></View>
 
   const dockVisible = true
+  const flowItems = documentFlow(blocks)
   // 整篇文档为空时才显示占位提示。文档里已经有图片或待办了，末段再冒出一句
   // 「输入正文」会让人觉得内容被割成了两截。
   const documentEmpty = !blocks.some(block => {
@@ -797,7 +810,7 @@ export default function DocumentPage() {
           <Textarea className='document-title' autoHeight adjustPosition={false} value={title} placeholder='无标题文档' maxlength={300} showConfirmBar={false} onFocus={() => { keepKeyboardDocked(); setEditorActive(false); requestDockCalibrationRef.current() }} onBlur={scheduleKeyboardDockReset} onInput={event => setTitle(event.detail.value)} />
         </View>
         <View className='document-flow'>
-          {documentFlow(blocks).map((item, flowIndex, flowItems) => {
+          {flowItems.map((item, flowIndex) => {
             if (item.kind === 'task') {
               const lines = (item.block.text || '').split('\n')
               return <View key={item.key} className='task-block'>
@@ -863,7 +876,7 @@ export default function DocumentPage() {
               onStatusChange={(event: any) => setFormats(event.detail || {})}
             />
           })}
-          {documentFlow(blocks).filter(item => item.kind === 'editor').map(item => (
+          {flowItems.filter(item => item.kind === 'editor').map(item => (
             <View key={`measure-${item.key}`} className='editor-measure' id={`kw-measure-${item.key}`}>
               <RichText nodes={segmentHtml[item.key] || ''} />
             </View>
