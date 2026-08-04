@@ -875,7 +875,11 @@ export default function DocumentPage() {
     <ScrollView className='document-scroll' scrollY enhanced enableFlex showScrollbar={false}>
       <View className='document-paper'>
         <View className='document-title-wrap'>
-          <Textarea className='document-title' autoHeight adjustPosition={false} value={title} placeholder='无标题文档' maxlength={300} showConfirmBar={false} onFocus={() => { contentFocusedRef.current = false; activeSegmentRef.current = null; keepKeyboardDocked(); setEditorActive(false) }} onBlur={scheduleKeyboardDockReset} onInput={event => setTitle(event.detail.value)} />
+          {/* adjustPosition={false} 曾是为了不让微信自己的滚动跟随和工具栏贴键盘逻辑打架，
+              但标题已经被 contentFocusedRef 排除在那套逻辑之外了，留着它只剩副作用：
+              微信在部分机型上对 adjustPosition=false 的输入框第一次点击只对焦不弹键盘，
+              要点第二下才真正唤起——交给微信自己处理原生 scroll-into-view 就没有这个问题。 */}
+          <Textarea className='document-title' autoHeight value={title} placeholder='无标题文档' maxlength={300} showConfirmBar={false} onFocus={() => { contentFocusedRef.current = false; activeSegmentRef.current = null; keepKeyboardDocked(); setEditorActive(false) }} onBlur={scheduleKeyboardDockReset} onInput={event => setTitle(event.detail.value)} />
         </View>
         <View className='document-flow'>
           {flowItems.map((item, flowIndex) => {
