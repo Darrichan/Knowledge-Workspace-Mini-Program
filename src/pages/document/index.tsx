@@ -112,12 +112,24 @@ const documentFlow = (blocks: DocumentBlock[]): DocumentFlowItem[] => {
   return output
 }
 
-// 正文结尾必须留一个空段落，否则文档以图片结尾时后面没有任何一行可以落光标，
-// 就再也写不下去了。
-const withTrailingLine = (blocks: DocumentBlock[]): DocumentBlock[] => {
-  const last = blocks[blocks.length - 1]
-  if (last && last.type === 'paragraph' && !(last.text || '').trim()) return blocks
-  return [...blocks, { id: `${Date.now().toString(36)}-tail`, type: 'paragraph', text: '' }]
+const blankParagraph = (suffix: string): DocumentBlock =>
+  ({ id: `${Date.now().toString(36)}-${suffix}`, type: 'paragraph', text: '' })
+
+// 正文的头尾都必须是可以落光标的段落。
+// 结尾：文档以图片结尾时后面若没有一行，就再也写不下去了。
+// 开头：待办和导图渲染在编辑器之外，如果它们排在第一位，上方就没有任何编辑器
+// 段承载光标 —— 看得见一点空隙，却怎么点都进不去。
+const withEditableEdges = (blocks: DocumentBlock[]): DocumentBlock[] => {
+  let next = blocks
+  const first = next[0]
+  if (first && (first.type === 'taskList' || first.type === 'mindMapBlock')) {
+    next = [blankParagraph('head'), ...next]
+  }
+  const last = next[next.length - 1]
+  if (!last || last.type !== 'paragraph' || (last.text || '').trim()) {
+    next = [...next, blankParagraph('tail')]
+  }
+  return next
 }
 
 const deltaText = (delta?: EditorDelta) => (delta?.ops || []).map(op => typeof op.insert === 'string' ? op.insert : '\ufffc').join('')
@@ -237,7 +249,7 @@ export default function DocumentPage() {
   const hydrate = (result: DocumentItem) => {
     setDocument(result); documentRef.current = result
     setTitle(result.title); titleRef.current = result.title
-    const nextBlocks = withTrailingLine(contentToBlocks(result.content))
+    const nextBlocks = withEditableEdges(contentToBlocks(result.content))
     setBlocks(nextBlocks); blocksRef.current = nextBlocks
     versionRef.current = result.version
     setStatus(`版本 ${result.version}`)
@@ -425,7 +437,7 @@ export default function DocumentPage() {
     editorTextRef.current = deltaText(delta)
     // 待办的续行与退出由原生 checklist 自己处理，这里只负责把 delta 同步成块。
     const segment = editorDeltaToBlocks(delta, imageLookupRef.current)
-    const next = withTrailingLine([...blocksRef.current.slice(0, start), ...segment, ...blocksRef.current.slice(start + count)])
+    const next = withEditableEdges([...blocksRef.current.slice(0, start), ...segment, ...blocksRef.current.slice(start + count)])
     blocksRef.current = next
     setBlocks(next)
   }
@@ -539,7 +551,7 @@ export default function DocumentPage() {
       // 插到光标所在段之后；没聚焦过就追加到文末。
       const insertAt = Math.min(Math.max(0, activeInsertionIndexRef.current || blocksRef.current.length), blocksRef.current.length)
       const absorbed = absorbBlankBefore(blocksRef.current, insertAt)
-      const next = withTrailingLine([...absorbed.blocks.slice(0, absorbed.insertAt), mapBlock, ...absorbed.blocks.slice(absorbed.insertAt)])
+      const next = withEditableEdges([...absorbed.blocks.slice(0, absorbed.insertAt), mapBlock, ...absorbed.blocks.slice(absorbed.insertAt)])
       blocksRef.current = next
       setBlocks(next)
       activeInsertionIndexRef.current = absorbed.insertAt + 1
@@ -672,7 +684,7 @@ export default function DocumentPage() {
     const insertAt = Math.min(Math.max(0, activeInsertionIndexRef.current || blocksRef.current.length), blocksRef.current.length)
     const block: DocumentBlock = { id: `${Date.now()}-task`, type: 'taskList', text: '', checkedLines: [false] }
     const absorbed = absorbBlankBefore(blocksRef.current, insertAt)
-    const next = withTrailingLine([...absorbed.blocks.slice(0, absorbed.insertAt), block, ...absorbed.blocks.slice(absorbed.insertAt)])
+    const next = withEditableEdges([...absorbed.blocks.slice(0, absorbed.insertAt), block, ...absorbed.blocks.slice(absorbed.insertAt)])
     blocksRef.current = next
     setBlocks(next)
     activeInsertionIndexRef.current = absorbed.insertAt + 1
