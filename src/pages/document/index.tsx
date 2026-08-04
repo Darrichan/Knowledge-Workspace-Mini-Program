@@ -402,10 +402,12 @@ export default function DocumentPage() {
       const nextHeight = Math.max(0, Number(height) || 0)
       if (nextHeight > 0) {
         clearKeyboardCloseTimer()
-        // 标题输入不属于正文内容区，别让它触发内容区跟着重新布局——
+        // 键盘真实高度始终记下来，哪怕这次聚焦的是标题/待办——不然切回正文时
+        // 键盘高度没变化、不会再触发新事件，工具栏就永远校准不到正确位置了。
+        keyboardHeightRef.current = nextHeight
+        // 标题/待办不属于编辑器内容区，别让它们触发内容区跟着重新布局——
         // 这正是标题输入法弹起又立刻收起的根因。
         if (!contentFocusedRef.current) return
-        keyboardHeightRef.current = nextHeight
         setKeyboardHeight(nextHeight)
         scheduleDockCalibration(nextHeight)
       } else {
@@ -907,10 +909,11 @@ export default function DocumentPage() {
                           // 插入会往上一个聚焦过的编辑器里塞标记。
                           activeSegmentRef.current = null
                           activeInsertionIndexRef.current = item.index + 1
-                          contentFocusedRef.current = true
+                          // 待办跟标题一样处理：不参与内容区跟键盘联动的重新布局，
+                          // 代价是编辑待办时工具栏不会贴上来，换来键盘能正常一次弹起。
+                          contentFocusedRef.current = false
                           keepKeyboardDocked()
                           setEditorActive(true)
-                          requestDockCalibrationRef.current()
                         }}
                         onBlur={scheduleKeyboardDockReset}
                         onInput={event => updateTaskLine(item.index, lineIndex, event.detail.value)}
