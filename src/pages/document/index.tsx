@@ -45,9 +45,10 @@ const blockHeightRpx = (block: DocumentBlock) => {
 }
 
 const editorHeightRpx = (segmentBlocks: DocumentBlock[]) => {
-  if (!segmentBlocks.length) return 180
+  // 空段只需要一个能点进去落光标的高度。给 180 会在待办/导图下方留出大片空白。
+  if (!segmentBlocks.length) return 100
   const contentHeight = segmentBlocks.reduce((total, block) => total + blockHeightRpx(block), 0)
-  return Math.max(180, contentHeight + 64)
+  return Math.max(140, contentHeight + 64)
 }
 
 // \u5bfc\u56fe\u662f\u5757\u7ea7\u5361\u7247\uff0c\u5f85\u529e\u8981\u81ea\u7ed8\u590d\u9009\u6846\u2014\u2014\u4e24\u8005\u7684\u5916\u89c2\u90fd\u4e0d\u80fd\u4ea4\u7ed9\u5fae\u4fe1 Editor \u51b3\u5b9a
@@ -59,12 +60,23 @@ type DocumentFlowItem =
   | { kind: 'mindmap'; key: string; index: number; block: DocumentBlock }
 
 const documentFlow = (blocks: DocumentBlock[]): DocumentFlowItem[] => {
+  // 绝大多数文档没有待办和导图，整篇就是一个连续编辑器，不用分段也不会产生空段。
+  const needsSplit = blocks.some(block => block.type === 'taskList' || block.type === 'mindMapBlock')
+  if (!needsSplit) return [{ kind: 'editor', key: 'editor-0', start: 0, count: blocks.length, blocks }]
+
   const output: DocumentFlowItem[] = []
   let segmentStart = 0
   let segmentBlocks: DocumentBlock[] = []
   let segmentIndex = 0
   const flush = () => {
-    output.push({ kind: 'editor', key: `editor-${segmentIndex++}`, start: segmentStart, count: segmentBlocks.length, blocks: segmentBlocks })
+    if (!segmentBlocks.length) return
+    // 只有空白内容的段同样会占掉一个 Editor 的高度，在待办/导图之间留出空隙。
+    const hasVisibleContent = segmentBlocks.some(block => {
+      if (block.type === 'image') return Boolean(block.src || block.thumbnail)
+      if (block.type === 'horizontalRule') return true
+      return Boolean((block.text || '').trim())
+    })
+    if (hasVisibleContent) output.push({ kind: 'editor', key: `editor-${segmentIndex++}`, start: segmentStart, count: segmentBlocks.length, blocks: segmentBlocks })
     segmentBlocks = []
   }
   blocks.forEach((block, index) => {
@@ -80,6 +92,10 @@ const documentFlow = (blocks: DocumentBlock[]): DocumentFlowItem[] => {
     }
   })
   flush()
+  // 末尾始终留一个可输入的编辑器，否则文档以待办或导图结尾时无处继续写。
+  if (output[output.length - 1]?.kind !== 'editor') {
+    output.push({ kind: 'editor', key: `editor-${segmentIndex}`, start: blocks.length, count: 0, blocks: [] })
+  }
   return output
 }
 
@@ -534,6 +550,34 @@ export default function DocumentPage() {
     Taro.vibrateShort({ type: 'light' }).catch(() => {})
   }
 
+  const removeTaskLine = (blockIndex: number, lineIndex: number) => {
+    const next = [...blocksRef.current]
+    const current = next[blockIndex]
+    if (!current || current.type !== 'taskList') return
+    const lines = (current.text || '').split('\n')
+    const checkedLines = [...(current.checkedLines || [])]
+    lines.splice(lineIndex, 1)
+    checkedLines.splice(lineIndex, 1)
+    // 删掉最后一条就把整个待办块移除，否则会留下一个空块占位。
+    if (!lines.length) next.splice(blockIndex, 1)
+    else next[blockIndex] = { ...current, text: lines.join('\n'), checkedLines }
+    blocksRef.current = next
+    setBlocks(next)
+  }
+
+  const removeBlockAt = (blockIndex: number) => {
+    const next = blocksRef.current.filter((_, index) => index !== blockIndex)
+    blocksRef.current = next
+    setBlocks(next)
+  }
+
+  const removeMindMapBlock = async (blockIndex: number, block: DocumentBlock) => {
+    const answer = await Taro.showModal({ title: '移除思维导图', content: '将从正文中移除这张导图，导图本身仍保留在文档中。' })
+    if (!answer.confirm) return
+    if (block.mapId) previewAttemptedRef.current.delete(block.mapId)
+    removeBlockAt(blockIndex)
+  }
+
   const insertTaskBlock = () => {
     const insertAt = Math.min(Math.max(0, activeInsertionIndexRef.current || blocksRef.current.length), blocksRef.current.length)
     const block: DocumentBlock = { id: `${Date.now()}-task`, type: 'taskList', text: '', checkedLines: [false] }
@@ -606,23 +650,27 @@ export default function DocumentPage() {
                     <View className='task-check-hit' onClick={() => toggleTaskLine(item.index, lineIndex)}>
                       <View className='task-check'>{checked ? '✓' : ''}</View>
                     </View>
-                    <Textarea
-                      className='task-text'
-                      autoHeight
-                      value={line}
-                      placeholder='输入待办事项'
-                      maxlength={2000}
-                      showConfirmBar={false}
-                      adjustPosition={false}
-                      onFocus={() => {
-                        activeInsertionIndexRef.current = item.index + 1
-                        keepKeyboardDocked()
-                        setEditorActive(true)
-                        requestDockCalibrationRef.current()
-                      }}
-                      onBlur={scheduleKeyboardDockReset}
-                      onInput={event => updateTaskLine(item.index, lineIndex, event.detail.value)}
-                    />
+                    {/* 微信原生 textarea 不吃 text-decoration，勾选后换成 text 才画得出删除线。 */}
+                    {checked
+                      ? <Text className='task-text task-text--done' onClick={() => toggleTaskLine(item.index, lineIndex)}>{line || '已完成'}</Text>
+                      : <Textarea
+                        className='task-text'
+                        autoHeight
+                        value={line}
+                        placeholder='输入待办事项'
+                        maxlength={2000}
+                        showConfirmBar={false}
+                        adjustPosition={false}
+                        onFocus={() => {
+                          activeInsertionIndexRef.current = item.index + 1
+                          keepKeyboardDocked()
+                          setEditorActive(true)
+                          requestDockCalibrationRef.current()
+                        }}
+                        onBlur={scheduleKeyboardDockReset}
+                        onInput={event => updateTaskLine(item.index, lineIndex, event.detail.value)}
+                      />}
+                    <View className='task-remove' onClick={() => removeTaskLine(item.index, lineIndex)}>×</View>
                   </View>
                 })}
               </View>
@@ -639,6 +687,7 @@ export default function DocumentPage() {
                     <Text className='mindmap-interactive__meta'>{item.block.nodeCount || 1} 个主题</Text>
                   </View>
                   <View className='mindmap-interactive__open'>进入编辑 →</View>
+                  <View className='mindmap-interactive__remove' onClick={event => { event.stopPropagation(); void removeMindMapBlock(item.index, item.block) }}>×</View>
                 </View>
               </View>
             }

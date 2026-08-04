@@ -188,9 +188,24 @@
   line-height: 1.5;
 }
 
-.task-row.checked .task-text {
+/* 勾选后由 <text> 渲染 —— 原生 textarea 不支持 text-decoration，
+   只会变灰而画不出删除线。 */
+.task-text--done {
   color: #8b98a8;
   text-decoration: line-through;
+}
+
+.task-remove {
+  width: 60px;
+  height: 60px;
+  margin-left: 6px;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: #b3bdca;
+  font-size: 40px;
+  line-height: 1;
 }
 
 .mindmap-picker {
