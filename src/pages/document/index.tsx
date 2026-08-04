@@ -12,10 +12,12 @@ import { renderMindMapPreview } from '../../services/mindMapPreview'
 import type { DocumentItem } from '../../types/domain'
 import './index.scss'
 
+// 标题统一收在「格式」栏里（H1-H6），插入菜单只放块级内容。
 const INSERT_TYPES: { label: string; type: BlockType }[] = [
-  { label: '正文', type: 'paragraph' }, { label: '一级标题', type: 'heading' }, { label: '无序列表', type: 'bulletList' },
-  { label: '有序列表', type: 'orderedList' }, { label: '待办', type: 'taskList' }, { label: '引用', type: 'blockquote' },
-  { label: '代码块', type: 'codeBlock' }, { label: '外链', type: 'link' }, { label: '分割线', type: 'horizontalRule' }
+  { label: '正文', type: 'paragraph' }, { label: '无序列表', type: 'bulletList' },
+  { label: '有序列表', type: 'orderedList' }, { label: '待办', type: 'taskList' },
+  { label: '引用', type: 'blockquote' }, { label: '代码块', type: 'codeBlock' },
+  { label: '外链', type: 'link' }, { label: '分割线', type: 'horizontalRule' }
 ]
 const COLORS = ['#1d2b3e', '#61728a', '#c84f58', '#d87932', '#b89116', '#358863', '#2f83aa', '#5579c2', '#7657b8', '#a94d7f']
 const COLOR_GROUPS = [
@@ -193,6 +195,8 @@ export default function DocumentPage() {
   const editorRefs = useRef<Record<string, Taro.EditorContext>>({})
   // 光标所在段的末尾位置，新导图插在这里而不是永远追加到文末。
   const activeInsertionIndexRef = useRef(0)
+  // 当前聚焦的编辑器段覆盖 blocks 的哪一片，按光标切分时需要。
+  const activeSegmentRef = useRef<{ key: string; start: number; count: number } | null>(null)
   const previewAttemptedRef = useRef<Set<string>>(new Set())
   // boundingClientRect 返回 px，样式统一用 rpx，这里存换算比例。
   const rpxPerPxRef = useRef(750 / Math.max(1, Number(Taro.getWindowInfo().windowWidth) || 375))
@@ -550,7 +554,7 @@ export default function DocumentPage() {
     if (!editorRef.current) return
     if (type === 'horizontalRule') editorRef.current.insertDivider()
     else if (type === 'link') void insertLink()
-    else setLineType(type, type === 'heading' ? 1 : 2)
+    else setLineType(type)
     setInsertOpen(false)
   }
 
@@ -607,13 +611,7 @@ export default function DocumentPage() {
       const map = await mindMapApi.create(documentRef.current.id, title, graph)
       const summary = mindMapGraphSummary(map.graph || graph)
       const mapBlock: DocumentBlock = { id: `${Date.now()}-map`, type: 'mindMapBlock', mapId: map.id, title: map.title, ...summary }
-      // 插到光标所在段之后；没聚焦过就追加到文末。
-      const insertAt = Math.min(Math.max(0, activeInsertionIndexRef.current || blocksRef.current.length), blocksRef.current.length)
-      const absorbed = absorbBlankBefore(blocksRef.current, insertAt)
-      const next = withEditableEdges([...absorbed.blocks.slice(0, absorbed.insertAt), mapBlock, ...absorbed.blocks.slice(absorbed.insertAt)])
-      blocksRef.current = next
-      setBlocks(next)
-      activeInsertionIndexRef.current = absorbed.insertAt + 1
+      insertBlockAtCursor(mapBlock)
       // 预览图失败也不影响卡片出现，卡片会退化成中心主题占位。
       try {
         const preview = await renderMindMapPreview(map, await getPreviewCanvas())
@@ -739,14 +737,68 @@ export default function DocumentPage() {
     return { blocks, insertAt }
   }
 
+
+  /** 把所有已挂载的编辑器段按新的 blocks 重刷。结构性插入后段的划分会变，
+      不重刷的话原有段仍显示旧内容。 */
+  const reloadSegments = async (nextBlocks: DocumentBlock[]) => {
+    for (const item of documentFlow(nextBlocks)) {
+      if (item.kind !== 'editor') continue
+      const context = editorRefs.current[item.key]
+      if (context) await loadBlocksIntoEditor(context, item.blocks, item.key)
+    }
+  }
+
+  // 微信不提供光标位置。先在光标处插入一个不可见标记，读回内容找到它落在
+  // 哪一行，就地切开 —— 否则新块只能追加到当前段末尾，跟光标对不上。
+  const CURSOR_MARKER = '\u2063KW\u2063'
+
+  const insertBlockAtCursor = (block: DocumentBlock) => {
+    const context = editorRef.current
+    const segment = activeSegmentRef.current
+    const appendFallback = () => {
+      const insertAt = Math.min(Math.max(0, activeInsertionIndexRef.current || blocksRef.current.length), blocksRef.current.length)
+      const absorbed = absorbBlankBefore(blocksRef.current, insertAt)
+      const next = withEditableEdges([...absorbed.blocks.slice(0, absorbed.insertAt), block, ...absorbed.blocks.slice(absorbed.insertAt)])
+      blocksRef.current = next
+      setBlocks(next)
+      activeInsertionIndexRef.current = absorbed.insertAt + 1
+      return next
+    }
+    if (!context || !segment) { appendFallback(); return }
+
+    context.insertText({
+      text: CURSOR_MARKER,
+      success: () => context.getContents({
+        success: (result: any) => {
+          const delta = result?.delta as EditorDelta | undefined
+          if (!delta) { appendFallback(); return }
+          const parsed = editorDeltaToBlocks(delta, imageLookupRef.current)
+          const markerIndex = parsed.findIndex(item => (item.text || '').includes(CURSOR_MARKER))
+          if (markerIndex < 0) { appendFallback(); return }
+
+          const target = parsed[markerIndex]
+          const [before, after] = (target.text || '').split(CURSOR_MARKER)
+          const head = before.trim() ? [{ ...target, text: before }] : []
+          const tail = after.trim() ? [{ ...target, id: `${target.id}-tail`, text: after }] : []
+          const rebuilt = [...parsed.slice(0, markerIndex), ...head, block, ...tail, ...parsed.slice(markerIndex + 1)]
+          const next = withEditableEdges([
+            ...blocksRef.current.slice(0, segment.start),
+            ...rebuilt,
+            ...blocksRef.current.slice(segment.start + segment.count)
+          ])
+          blocksRef.current = next
+          setBlocks(next)
+          activeInsertionIndexRef.current = segment.start + markerIndex + head.length + 1
+          void reloadSegments(next)
+        },
+        fail: () => { appendFallback() }
+      }),
+      fail: () => { appendFallback() }
+    })
+  }
+
   const insertTaskBlock = () => {
-    const insertAt = Math.min(Math.max(0, activeInsertionIndexRef.current || blocksRef.current.length), blocksRef.current.length)
-    const block: DocumentBlock = { id: `${Date.now()}-task`, type: 'taskList', text: '', checkedLines: [false] }
-    const absorbed = absorbBlankBefore(blocksRef.current, insertAt)
-    const next = withEditableEdges([...absorbed.blocks.slice(0, absorbed.insertAt), block, ...absorbed.blocks.slice(absorbed.insertAt)])
-    blocksRef.current = next
-    setBlocks(next)
-    activeInsertionIndexRef.current = absorbed.insertAt + 1
+    insertBlockAtCursor({ id: `${Date.now()}-task`, type: 'taskList', text: '', checkedLines: [false] })
     setInsertOpen(false)
   }
 
@@ -866,6 +918,7 @@ export default function DocumentPage() {
               onReady={() => editorReady(item.key, item.blocks)}
               onFocus={() => {
                 editorRef.current = editorRefs.current[item.key] || editorRef.current
+                activeSegmentRef.current = { key: item.key, start: item.start, count: item.count }
                 activeInsertionIndexRef.current = item.start + item.count
                 keepKeyboardDocked()
                 setEditorActive(true)
@@ -904,6 +957,9 @@ export default function DocumentPage() {
           <View onClick={() => setLineType('heading', 1)}>H1</View>
           <View onClick={() => setLineType('heading', 2)}>H2</View>
           <View onClick={() => setLineType('heading', 3)}>H3</View>
+          <View onClick={() => setLineType('heading', 4)}>H4</View>
+          <View onClick={() => setLineType('heading', 5)}>H5</View>
+          <View onClick={() => setLineType('heading', 6)}>H6</View>
           <View className={formats.bold ? 'on strong' : 'strong'} onClick={() => applyFormat('bold')}>加粗</View>
           <View onClick={insertTaskBlock}>待办</View>
           <View onClick={() => setLineType('orderedList')}>编号</View>
