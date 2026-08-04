@@ -38,13 +38,15 @@ const EDITOR_CONTENT_WIDTH_RPX = 714
 
 const blockHeightRpx = (block: DocumentBlock) => {
   if (block.type === 'image') {
-    // 图片是 width:100% 插入的，高度完全由原始比例决定。以前不管什么图都按
-    // 620rpx 预留，宽幅照片实际只占两三百，下面就空出一大块。
+    // 图片以 width:100% 插入，高度完全由原始比例决定，而页面 wxss 进不去编辑器，
+    // 没有任何 max-height 能约束它。预留少了就会被直接裁掉（长截图尤其明显），
+    // 所以宁可多留一点：留白只是观感，裁切是功能。
     const { imageWidth, imageHeight } = block
     if (imageWidth && imageHeight) {
-      return Math.round(Math.min(900, Math.max(180, EDITOR_CONTENT_WIDTH_RPX * (imageHeight / imageWidth)))) + 36
+      return Math.round(Math.min(3600, Math.max(200, EDITOR_CONTENT_WIDTH_RPX * (imageHeight / imageWidth)))) + 48
     }
-    return 560
+    // 尺寸未知时按偏高的竖图预留，量出来之后会立刻收敛到真实值。
+    return 960
   }
   if (block.type === 'mindMapBlock') return 620
   if (block.type === 'horizontalRule') return 72
@@ -59,10 +61,10 @@ const blockHeightRpx = (block: DocumentBlock) => {
 const editorHeightRpx = (segmentBlocks: DocumentBlock[], isLast = false) => {
   // 末段只留一点余量。能不能在图片下方落光标已经由 withTrailingLine 保证，
   // 靠留白去撑只会在待办/图片下方堆出一大块空区。
-  const trailingSlack = isLast ? 48 : 0
-  if (!segmentBlocks.length) return 72 + trailingSlack
+  const trailingSlack = isLast ? 120 : 0
+  if (!segmentBlocks.length) return 76 + trailingSlack
   const contentHeight = segmentBlocks.reduce((total, block) => total + blockHeightRpx(block), 0)
-  return Math.max(72, contentHeight + 24) + trailingSlack
+  return Math.max(76, contentHeight + 40) + trailingSlack
 }
 
 // \u5bfc\u56fe\u662f\u5757\u7ea7\u5361\u7247\uff0c\u5f85\u529e\u8981\u81ea\u7ed8\u590d\u9009\u6846\u2014\u2014\u4e24\u8005\u7684\u5916\u89c2\u90fd\u4e0d\u80fd\u4ea4\u7ed9\u5fae\u4fe1 Editor \u51b3\u5b9a
@@ -165,6 +167,8 @@ export default function DocumentPage() {
   // 光标所在段的末尾位置，新导图插在这里而不是永远追加到文末。
   const activeInsertionIndexRef = useRef(0)
   const previewAttemptedRef = useRef<Set<string>>(new Set())
+  // 已量出的图片尺寸，按图片地址缓存，避免重复 getImageInfo。
+  const imageSizeRef = useRef<Record<string, { width: number; height: number }>>({})
 
   const getPreviewCanvas = async () => {
     if (previewCanvasRef.current) return previewCanvasRef.current
@@ -175,17 +179,54 @@ export default function DocumentPage() {
     })
   }
 
+  /** 量出图片真实尺寸并回填到块上。旧文档没有记录尺寸，只靠兜底值会把图裁掉。 */
+  const measureImages = async (localPaths: Record<string, string>) => {
+    const entries = Object.entries(localPaths)
+    let changed = false
+    for (const [key, localPath] of entries) {
+      if (!localPath || imageSizeRef.current[key]) continue
+      try {
+        const info = await Taro.getImageInfo({ src: localPath })
+        const width = Number(info.width) || 0
+        const height = Number(info.height) || 0
+        if (!width || !height) continue
+        imageSizeRef.current[key] = { width, height }
+        changed = true
+      } catch {}
+    }
+    if (!changed) return
+    const next = blocksRef.current.map(block => {
+      if (block.type !== 'image') return block
+      const size = imageSizeRef.current[block.src || block.thumbnail || '']
+      if (!size || (block.imageWidth === size.width && block.imageHeight === size.height)) return block
+      return { ...block, imageWidth: size.width, imageHeight: size.height }
+    })
+    if (next.some((block, index) => block !== blocksRef.current[index])) {
+      blocksRef.current = next
+      setBlocks(next)
+    }
+  }
+
   const loadBlocksIntoEditor = async (context: Taro.EditorContext, nextBlocks: DocumentBlock[]) => {
     settingEditorRef.current = true
+    const measured: Record<string, string> = {}
     try {
       const prepared = await blocksToEditorDelta(nextBlocks, async block => {
-        try { return await downloadAssetFile(block.thumbnail || block.src) } catch { return block.thumbnail || block.src || '' }
+        const key = block.src || block.thumbnail || ''
+        try {
+          const localPath = await downloadAssetFile(block.thumbnail || block.src)
+          if (key && localPath) measured[key] = localPath
+          return localPath
+        } catch { return block.thumbnail || block.src || '' }
       })
       imageLookupRef.current = { ...imageLookupRef.current, ...prepared.imageLookup }
       editorTextRef.current = deltaText(prepared.delta)
       context.setContents({
         delta: prepared.delta,
-        complete: () => setTimeout(() => { settingEditorRef.current = false }, 80)
+        complete: () => setTimeout(() => {
+          settingEditorRef.current = false
+          void measureImages(measured)
+        }, 80)
       })
     } catch {
       settingEditorRef.current = false
