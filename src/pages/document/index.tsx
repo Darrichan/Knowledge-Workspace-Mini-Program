@@ -1,5 +1,5 @@
 import { Canvas, Editor, Image, Input, ScrollView, Text, Textarea, View } from '@tarojs/components'
-import Taro, { useLoad, useRouter } from '@tarojs/taro'
+import Taro, { useDidShow, useLoad, useRouter } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import DocumentPanels from '../../components/DocumentPanels'
 import { documentApi, downloadAssetFile, mindMapApi, workspaceApi } from '../../services/api'
@@ -58,11 +58,10 @@ const blockHeightRpx = (block: DocumentBlock) => {
 
 const editorHeightRpx = (segmentBlocks: DocumentBlock[], isLast = false) => {
   // 末段多留一截，既能在图片下方点出光标继续写，也保证滚得到底。
-  const trailingSlack = isLast ? 200 : 0
-  // 空段只需要一个能点进去落光标的高度。给 180 会在待办/导图下方留出大片空白。
-  if (!segmentBlocks.length) return 100 + trailingSlack
+  const trailingSlack = isLast ? 240 : 0
+  if (!segmentBlocks.length) return 72 + trailingSlack
   const contentHeight = segmentBlocks.reduce((total, block) => total + blockHeightRpx(block), 0)
-  return Math.max(140, contentHeight + 64) + trailingSlack
+  return Math.max(72, contentHeight + 24) + trailingSlack
 }
 
 // \u5bfc\u56fe\u662f\u5757\u7ea7\u5361\u7247\uff0c\u5f85\u529e\u8981\u81ea\u7ed8\u590d\u9009\u6846\u2014\u2014\u4e24\u8005\u7684\u5916\u89c2\u90fd\u4e0d\u80fd\u4ea4\u7ed9\u5fae\u4fe1 Editor \u51b3\u5b9a
@@ -82,15 +81,12 @@ const documentFlow = (blocks: DocumentBlock[]): DocumentFlowItem[] => {
   let segmentStart = 0
   let segmentBlocks: DocumentBlock[] = []
   let segmentIndex = 0
+  // 千万不要因为某段"看起来是空的"就跳过它 —— 段里的块会留在 blocks 数据里
+  // 却没有任何编辑器承载，变成看不见也删不掉的孤儿；等相邻内容再变化时，
+  // 这些空行又会突然冒出来。空段照样渲染，只是给一个很小的高度。
   const flush = () => {
     if (!segmentBlocks.length) return
-    // 只有空白内容的段同样会占掉一个 Editor 的高度，在待办/导图之间留出空隙。
-    const hasVisibleContent = segmentBlocks.some(block => {
-      if (block.type === 'image') return Boolean(block.src || block.thumbnail)
-      if (block.type === 'horizontalRule') return true
-      return Boolean((block.text || '').trim())
-    })
-    if (hasVisibleContent) output.push({ kind: 'editor', key: `editor-${segmentIndex++}`, start: segmentStart, count: segmentBlocks.length, blocks: segmentBlocks })
+    output.push({ kind: 'editor', key: `editor-${segmentIndex++}`, start: segmentStart, count: segmentBlocks.length, blocks: segmentBlocks })
     segmentBlocks = []
   }
   blocks.forEach((block, index) => {
@@ -111,6 +107,14 @@ const documentFlow = (blocks: DocumentBlock[]): DocumentFlowItem[] => {
     output.push({ kind: 'editor', key: `editor-${segmentIndex}`, start: blocks.length, count: 0, blocks: [] })
   }
   return output
+}
+
+// 正文结尾必须留一个空段落，否则文档以图片结尾时后面没有任何一行可以落光标，
+// 就再也写不下去了。
+const withTrailingLine = (blocks: DocumentBlock[]): DocumentBlock[] => {
+  const last = blocks[blocks.length - 1]
+  if (last && last.type === 'paragraph' && !(last.text || '').trim()) return blocks
+  return [...blocks, { id: `${Date.now().toString(36)}-tail`, type: 'paragraph', text: '' }]
 }
 
 const deltaText = (delta?: EditorDelta) => (delta?.ops || []).map(op => typeof op.insert === 'string' ? op.insert : '\ufffc').join('')
@@ -191,7 +195,7 @@ export default function DocumentPage() {
   const hydrate = (result: DocumentItem) => {
     setDocument(result); documentRef.current = result
     setTitle(result.title); titleRef.current = result.title
-    const nextBlocks = contentToBlocks(result.content)
+    const nextBlocks = withTrailingLine(contentToBlocks(result.content))
     setBlocks(nextBlocks); blocksRef.current = nextBlocks
     versionRef.current = result.version
     setStatus(`版本 ${result.version}`)
@@ -379,7 +383,7 @@ export default function DocumentPage() {
     editorTextRef.current = deltaText(delta)
     // 待办的续行与退出由原生 checklist 自己处理，这里只负责把 delta 同步成块。
     const segment = editorDeltaToBlocks(delta, imageLookupRef.current)
-    const next = [...blocksRef.current.slice(0, start), ...segment, ...blocksRef.current.slice(start + count)]
+    const next = withTrailingLine([...blocksRef.current.slice(0, start), ...segment, ...blocksRef.current.slice(start + count)])
     blocksRef.current = next
     setBlocks(next)
   }
@@ -543,6 +547,13 @@ export default function DocumentPage() {
     })()
     return () => { cancelled = true }
   }, [blocks, mapPreviews])
+
+  // 从导图编辑页返回时预览必须重画，否则卡片永远停留在刚创建的样子。
+  useDidShow(() => {
+    if (!hydrated.current) return
+    previewAttemptedRef.current.clear()
+    setMapPreviews({})
+  })
 
   const openMindMapBlock = (block: DocumentBlock) => {
     if (!block.mapId || !documentRef.current) return
@@ -714,15 +725,8 @@ export default function DocumentPage() {
               return <View key={item.key} className='mindmap-interactive' hoverClass='mindmap-interactive--pressed' onClick={() => openMindMapBlock(item.block)}>
                 {preview
                   ? <Image className='mindmap-interactive__image' src={preview} mode='aspectFit' />
-                  : <View className='mindmap-interactive__fallback'><View className='mindmap-interactive__root'>{item.block.previewLabels?.[0] || item.block.title || '中心主题'}</View></View>}
-                <View className='mindmap-interactive__bar'>
-                  <View>
-                    <Text className='mindmap-interactive__title'>{item.block.title || '未命名思维导图'}</Text>
-                    <Text className='mindmap-interactive__meta'>{item.block.nodeCount || 1} 个主题</Text>
-                  </View>
-                  <View className='mindmap-interactive__open'>进入编辑 →</View>
-                  <View className='mindmap-interactive__remove' onClick={event => { event.stopPropagation(); void removeMindMapBlock(item.index, item.block) }}>×</View>
-                </View>
+                  : <View className='mindmap-interactive__fallback'><View className='mindmap-interactive__root'>{item.block.previewLabels?.[0] || '中心主题'}</View></View>}
+                <View className='mindmap-interactive__remove' onClick={event => { event.stopPropagation(); void removeMindMapBlock(item.index, item.block) }}>×</View>
               </View>
             }
             return <Editor

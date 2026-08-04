@@ -271,6 +271,69 @@
   font-size: 38px;
 }
 
+/* 导图卡片。交互直接落在导图本身：点图进编辑，右上角 × 从正文移除。
+   不再挂标题/主题数的信息条 —— 那些文字不会随导图更新，反而误导。 */
+.mindmap-interactive {
+  position: relative;
+  margin: 10px 0 22px;
+  overflow: hidden;
+  border: 2px solid #dce5f1;
+  border-radius: 16px;
+  background: #f8faff;
+  box-shadow: 0 6px 18px rgba(47, 68, 99, .07);
+}
+
+.mindmap-interactive--pressed {
+  opacity: .78;
+  transform: scale(.995);
+}
+
+.mindmap-interactive__image {
+  width: 100%;
+  height: 300px;
+  display: block;
+  background: #f8faff;
+  object-fit: contain;
+}
+
+.mindmap-interactive__fallback {
+  height: 300px;
+  padding: 30px;
+  display: flex;
+  align-items: center;
+  background-image: radial-gradient(#dce5f3 2px, transparent 2px);
+  background-size: 24px 24px;
+}
+
+.mindmap-interactive__root {
+  min-width: 190px;
+  padding: 20px 26px;
+  color: #fff;
+  background: #607fd0;
+  border: 3px solid #344258;
+  border-radius: 18px;
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.mindmap-interactive__remove {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  right: 10px;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6c7c92;
+  background: rgba(255, 255, 255, .92);
+  border: 1px solid #dce5f1;
+  border-radius: 50%;
+  font-size: 34px;
+  line-height: 1;
+}
+
 .document-bottom-space {
   height: 36px;
 }
