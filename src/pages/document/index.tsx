@@ -867,7 +867,12 @@ export default function DocumentPage() {
       <View className='document-top__menu' onClick={openDocumentMenu}>•••</View>
     </View>
 
-    <ScrollView className='document-scroll' scrollY enhanced enableFlex scrollAnchoring showScrollbar={false}>
+    {/* scrollAnchoring 曾用来配合"键盘弹起时整页容器跟着变矮"的旧方案，那套方案早改成
+        translate3d + 底部占位（见下方 keyboardHeight/dockCorrection），但这个 flag 一直没删。
+        它会在容器内任何元素变高时（包括聚焦中的 textarea 自身 autoHeight 换行）悄悄挪动 scrollTop，
+        而标题/待办这类 adjustPosition={false} 的原生输入框一旦被这样挪动就会被系统判定失焦——
+        键盘"弹起又立刻收起"就是这么来的，删掉即可，不需要替代方案。 */}
+    <ScrollView className='document-scroll' scrollY enhanced enableFlex showScrollbar={false}>
       <View className='document-paper'>
         <View className='document-title-wrap'>
           <Textarea className='document-title' autoHeight adjustPosition={false} value={title} placeholder='无标题文档' maxlength={300} showConfirmBar={false} onFocus={() => { contentFocusedRef.current = false; activeSegmentRef.current = null; keepKeyboardDocked(); setEditorActive(false) }} onBlur={scheduleKeyboardDockReset} onInput={event => setTitle(event.detail.value)} />
