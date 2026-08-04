@@ -136,71 +136,59 @@
   background: #f1f4f8;
 }
 
-/* 微信 <editor> 不自带 Quill 的勾选列表样式表，不补这段的话 <ul data-checked>
-   会退回浏览器默认的 list-style: disc，待办就显示成一个圆点。
-
-   这里必须写真实的 ul / li 标签名才能命中 <editor> 内部由微信渲染的 DOM，
-   因此 config/index.ts 里关掉了 postcss-html-transform（它会把 ul/li 改写成
-   .h5-ul/.h5-li，并且会把含 * 的规则整条删除）。改这段前先看那里的注释。
-   结构参考微信官方 editor.wxss，同时兼容 Quill 1.x (ul[data-checked] > li)
-   与 Quill 2.x (li[data-list=checked]) 两种标记。 */
-.document-editor .ql-editor ul[data-checked=true],
-.document-editor .ql-editor ul[data-checked=false] {
-  padding-left: 0;
-  list-style: none;
-  /* 点击穿透到下层 contenteditable 正常落光标，只有复选框自己拦截点击 */
-  pointer-events: none;
+/* 待办用自绘方框，不走微信原生 checklist —— 原生 checklist 会渲染成一个圆点，
+   而页面 wxss 穿不进 <editor>，样式改不动。待办行因此渲染在 Editor 之外。 */
+.task-block {
+  margin: 12px 0 22px;
 }
 
-.document-editor .ql-editor ul[data-checked=true] > li,
-.document-editor .ql-editor ul[data-checked=false] > li,
-.document-editor .ql-editor li[data-list=checked],
-.document-editor .ql-editor li[data-list=unchecked] {
-  position: relative;
-  padding-left: 46px;
-  list-style: none;
+.task-row {
+  min-height: 82px;
+  display: flex;
+  align-items: center;
+  color: #2b3d55;
 }
 
-.document-editor .ql-editor ul[data-checked=true] > li span,
-.document-editor .ql-editor ul[data-checked=false] > li span {
-  pointer-events: all;
+.task-check-hit {
+  width: 72px;
+  height: 72px;
+  margin-right: 12px;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
 }
 
-/* 未勾选：描边空框 */
-.document-editor .ql-editor ul[data-checked=true] > li::before,
-.document-editor .ql-editor ul[data-checked=false] > li::before,
-.document-editor .ql-editor li[data-list=checked]::before,
-.document-editor .ql-editor li[data-list=unchecked]::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 12px;
-  width: 28px;
-  height: 28px;
+.task-check {
+  width: 48px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   border: 3px solid #8190a4;
-  border-radius: 7px;
-  background: #fff;
+  border-radius: 14px;
   box-sizing: border-box;
-  pointer-events: all;
-  font-size: 21px;
+  font-size: 30px;
   font-weight: 900;
   line-height: 1;
 }
 
-/* 已勾选：雾蓝实心 + 白勾 */
-.document-editor .ql-editor ul[data-checked=true] > li::before,
-.document-editor .ql-editor li[data-list=checked]::before {
-  content: '\2713';
+.task-row.checked .task-check {
   border-color: #5f83cd;
   background: #5f83cd;
 }
 
-.document-editor .ql-editor ul[data-checked=true] > li,
-.document-editor .ql-editor li[data-list=checked] {
+.task-text {
+  min-height: 72px;
+  padding: 7px 0;
+  flex: 1;
+  color: #2b3d55;
+  font-size: 36px;
+  line-height: 1.5;
+}
+
+.task-row.checked .task-text {
   color: #8b98a8;
   text-decoration: line-through;
 }
@@ -502,32 +490,4 @@
   .document-title { font-size: 42px; }
   .document-editor,
   .document-editor::before { font-size: 27px; }
-}
-
-/* 临时诊断面板。确认待办样式问题后连同 index.tsx 里的入口一起删除。 */
-.diagnostics-sheet {
-  position: fixed;
-  z-index: 140;
-  left: 18px;
-  right: 18px;
-  bottom: calc(18px + env(safe-area-inset-bottom));
-  max-height: 72vh;
-  padding: 18px;
-  background: #fff;
-  border: 1px solid #dbe3ee;
-  border-radius: 24px;
-  box-shadow: 0 20px 60px rgba(38, 52, 76, .2);
-}
-
-.diagnostics-body {
-  max-height: 56vh;
-}
-
-.diagnostics-text {
-  color: #33465e;
-  word-break: break-all;
-  white-space: pre-wrap;
-  font-size: 18px;
-  font-family: monospace;
-  line-height: 1.6;
 }

@@ -28,12 +28,13 @@ const inlineAttributes = (block: DocumentBlock) => ({
   ...(block.type === 'link' && block.url ? { link: block.url } : {})
 })
 
-const lineAttributes = (block: DocumentBlock, lineIndex = 0) => {
+const lineAttributes = (block: DocumentBlock, _lineIndex = 0) => {
   if (block.type === 'heading') return { header: Math.min(6, Math.max(1, block.level || 2)) }
   if (block.type === 'bulletList') return { list: 'bullet' }
   if (block.type === 'orderedList') return { list: 'ordered' }
-  // 微信 Editor 原生支持勾选列表，勾选态由行属性表达，正文不再混入 ☐/☑ 字符。
-  if (block.type === 'taskList') return { list: block.checkedLines?.[lineIndex] ? 'checked' : 'unchecked' }
+  // 待办渲染在 Editor 之外（自绘方框），正常不会走到这里。万一漏进来也按普通
+  // 段落处理，绝不要退回原生 checklist —— 页面 wxss 穿不进去，它会显示成圆点。
+  if (block.type === 'taskList') return {}
   if (block.type === 'blockquote') return { blockquote: true }
   if (block.type === 'codeBlock') return { 'code-block': block.language || true }
   return {}

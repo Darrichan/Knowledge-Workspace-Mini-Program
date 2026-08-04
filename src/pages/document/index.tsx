@@ -50,11 +50,12 @@ const editorHeightRpx = (segmentBlocks: DocumentBlock[]) => {
   return Math.max(180, contentHeight + 64)
 }
 
-// \u5bfc\u56fe\u662f\u5757\u7ea7\u5361\u7247\uff0c\u5fae\u4fe1 Editor \u88c5\u4e0d\u4e0b\u5b83\uff08insertImage \u53ea\u8ba4\u4e34\u65f6\u6587\u4ef6\uff0c\u4e14\u5361\u7247\u5916\u89c2
-// \u5b8c\u5168\u4e0d\u53d7\u6211\u4eec\u63a7\u5236\uff09\u3002\u56e0\u6b64\u53ea\u5728\u5bfc\u56fe\u5904\u628a\u6b63\u6587\u5207\u6210\u591a\u6bb5 Editor\uff0c\u5bfc\u56fe\u672c\u8eab\u7528\u666e\u901a
-// React \u7ec4\u4ef6\u6e32\u67d3\u5728\u6bb5\u4e0e\u6bb5\u4e4b\u95f4\u3002\u5f85\u529e\u662f\u884c\u5185\u683c\u5f0f\uff0cEditor \u539f\u751f\u652f\u6301\uff0c\u4e0d\u5207\u3002
+// \u5bfc\u56fe\u662f\u5757\u7ea7\u5361\u7247\uff0c\u5f85\u529e\u8981\u81ea\u7ed8\u590d\u9009\u6846\u2014\u2014\u4e24\u8005\u7684\u5916\u89c2\u90fd\u4e0d\u80fd\u4ea4\u7ed9\u5fae\u4fe1 Editor \u51b3\u5b9a
+// \uff08\u539f\u751f checklist \u4f1a\u6e32\u67d3\u6210\u4e00\u4e2a\u5706\u70b9\uff0c\u4e14\u9875\u9762 wxss \u8fdb\u4e0d\u53bb\uff09\u3002\u56e0\u6b64\u5728\u8fd9\u4e24\u79cd\u5757\u5904
+// \u628a\u6b63\u6587\u5207\u6210\u591a\u6bb5 Editor\uff0c\u5757\u672c\u8eab\u7528\u666e\u901a React \u7ec4\u4ef6\u6e32\u67d3\u5728\u6bb5\u4e0e\u6bb5\u4e4b\u95f4\u3002
 type DocumentFlowItem =
   | { kind: 'editor'; key: string; start: number; count: number; blocks: DocumentBlock[] }
+  | { kind: 'task'; key: string; index: number; block: DocumentBlock }
   | { kind: 'mindmap'; key: string; index: number; block: DocumentBlock }
 
 const documentFlow = (blocks: DocumentBlock[]): DocumentFlowItem[] => {
@@ -67,9 +68,11 @@ const documentFlow = (blocks: DocumentBlock[]): DocumentFlowItem[] => {
     segmentBlocks = []
   }
   blocks.forEach((block, index) => {
-    if (block.type === 'mindMapBlock') {
+    if (block.type === 'taskList' || block.type === 'mindMapBlock') {
       flush()
-      output.push({ kind: 'mindmap', key: `mindmap-${block.mapId || block.id}`, index, block })
+      output.push(block.type === 'taskList'
+        ? { kind: 'task', key: `task-${block.id}`, index, block }
+        : { kind: 'mindmap', key: `mindmap-${block.mapId || block.id}`, index, block })
       segmentStart = index + 1
     } else {
       if (!segmentBlocks.length) segmentStart = index
@@ -107,9 +110,6 @@ export default function DocumentPage() {
   const [creatingMindMap, setCreatingMindMap] = useState(false)
   const [mindMapChoices, setMindMapChoices] = useState<DocumentItem[]>([])
   const [mapPreviews, setMapPreviews] = useState<Record<string, string>>({})
-  // 临时诊断：待办复选框的样式取决于页面 wxss 能否穿透进 <editor>，
-  // 这一点没有设备侧证据。确认后连同 ••• 菜单里的入口一起删掉。
-  const [diagnostics, setDiagnostics] = useState('')
   const [colorOpen, setColorOpen] = useState(false)
   const [customColor, setCustomColor] = useState('#5579c2')
   const [recentColors, setRecentColors] = useState<string[]>([])
@@ -381,8 +381,7 @@ export default function DocumentPage() {
     } else if (type === 'orderedList') {
       editorRef.current.format('list', '')
       setTimeout(() => editorRef.current?.format('list', 'ordered'), 0)
-    } else if (type === 'taskList') editorRef.current.format('list', 'check')
-    else if (type === 'blockquote') editorRef.current.format('blockquote', 'true')
+    } else if (type === 'blockquote') editorRef.current.format('blockquote', 'true')
     else if (type === 'codeBlock') {
       editorRef.current.format('fontFamily', 'monospace')
       editorRef.current.format('backgroundColor', '#eef2f7')
@@ -400,7 +399,7 @@ export default function DocumentPage() {
   }
 
   const insertContent = (type: BlockType) => {
-    if (type === 'taskList') return setLineType(type)
+    if (type === 'taskList') return insertTaskBlock()
     if (!editorRef.current) return
     if (type === 'horizontalRule') editorRef.current.insertDivider()
     else if (type === 'link') void insertLink()
@@ -507,6 +506,44 @@ export default function DocumentPage() {
     Taro.navigateTo({ url: `/pages/mindmap/index?id=${documentRef.current.id}&mapId=${block.mapId}` })
   }
 
+  const updateTaskLine = (blockIndex: number, lineIndex: number, value: string) => {
+    const next = [...blocksRef.current]
+    const current = next[blockIndex]
+    if (!current || current.type !== 'taskList') return
+    const lines = (current.text || '').split('\n')
+    const checkedLines = [...(current.checkedLines || [])]
+    // 在待办里敲回车会把换行带进这一行的值，要真的拆成多行，
+    // 否则勾选状态会和显示的行对不上。
+    const inserted = value.split('\n')
+    lines.splice(lineIndex, 1, ...inserted)
+    if (inserted.length > 1) checkedLines.splice(lineIndex + 1, 0, ...new Array(inserted.length - 1).fill(false))
+    next[blockIndex] = { ...current, text: lines.join('\n'), checkedLines }
+    blocksRef.current = next
+    setBlocks(next)
+  }
+
+  const toggleTaskLine = (blockIndex: number, lineIndex: number) => {
+    const next = [...blocksRef.current]
+    const current = next[blockIndex]
+    if (!current || current.type !== 'taskList') return
+    const checkedLines = [...(current.checkedLines || [])]
+    checkedLines[lineIndex] = !checkedLines[lineIndex]
+    next[blockIndex] = { ...current, checkedLines }
+    blocksRef.current = next
+    setBlocks(next)
+    Taro.vibrateShort({ type: 'light' }).catch(() => {})
+  }
+
+  const insertTaskBlock = () => {
+    const insertAt = Math.min(Math.max(0, activeInsertionIndexRef.current || blocksRef.current.length), blocksRef.current.length)
+    const block: DocumentBlock = { id: `${Date.now()}-task`, type: 'taskList', text: '', checkedLines: [false] }
+    const next = [...blocksRef.current.slice(0, insertAt), block, ...blocksRef.current.slice(insertAt)]
+    blocksRef.current = next
+    setBlocks(next)
+    activeInsertionIndexRef.current = insertAt + 1
+    setInsertOpen(false)
+  }
+
   const importMindMap = async () => {
     if (!documentRef.current || creatingMindMapRef.current) return
     try {
@@ -532,25 +569,10 @@ export default function DocumentPage() {
     )
   }
 
-  const runDiagnostics = () => {
-    const base: Record<string, any> = {
-      SDKVersion: Taro.getSystemInfoSync().SDKVersion,
-      当前行格式: formats || null,
-      段数: documentFlow(blocksRef.current).filter(item => item.kind === 'editor').length
-    }
-    const context = editorRef.current
-    if (!context) return setDiagnostics(JSON.stringify({ ...base, 错误: '没有拿到 editor context' }, null, 1))
-    context.getContents({
-      success: (result: any) => setDiagnostics(JSON.stringify({ ...base, html: String(result?.html || '').slice(0, 2000) }, null, 1)),
-      fail: (error: any) => setDiagnostics(JSON.stringify({ ...base, 错误: error?.errMsg || 'getContents 失败' }, null, 1))
-    })
-  }
-
-  const openDocumentMenu = () => Taro.showActionSheet({ itemList: ['编辑历史', '分享与发布', '编辑器诊断', '删除文档'] }).then(async result => {
+  const openDocumentMenu = () => Taro.showActionSheet({ itemList: ['编辑历史', '分享与发布', '删除文档'] }).then(async result => {
     if (result.tapIndex === 0) setPanel('history')
     if (result.tapIndex === 1) setPanel('share')
-    if (result.tapIndex === 2) runDiagnostics()
-    if (result.tapIndex === 3 && document) {
+    if (result.tapIndex === 2 && document) {
       const answer = await Taro.showModal({ title: '移到回收站', content: '确定删除当前文档吗？' })
       if (answer.confirm) { await documentApi.remove(document.id); Taro.navigateBack() }
     }
@@ -559,7 +581,6 @@ export default function DocumentPage() {
   if (!document) return <View className='loading-screen'><View className='loading-ring' /><Text>正在打开内容</Text></View>
 
   const dockVisible = true
-  const taskListActive = ['check', 'checked', 'unchecked'].includes(formats.list)
   return <View className='document-page'>
     <Canvas id='kw-mindmap-preview-canvas' type='2d' className='mindmap-preview-canvas' />
     <View className='document-top'>
@@ -576,6 +597,36 @@ export default function DocumentPage() {
         </View>
         <View className='document-flow'>
           {documentFlow(blocks).map((item, flowIndex, flowItems) => {
+            if (item.kind === 'task') {
+              const lines = (item.block.text || '').split('\n')
+              return <View key={item.key} className='task-block'>
+                {lines.map((line, lineIndex) => {
+                  const checked = Boolean(item.block.checkedLines?.[lineIndex])
+                  return <View key={`${item.key}-${lineIndex}`} className={`task-row ${checked ? 'checked' : ''}`}>
+                    <View className='task-check-hit' onClick={() => toggleTaskLine(item.index, lineIndex)}>
+                      <View className='task-check'>{checked ? '✓' : ''}</View>
+                    </View>
+                    <Textarea
+                      className='task-text'
+                      autoHeight
+                      value={line}
+                      placeholder='输入待办事项'
+                      maxlength={2000}
+                      showConfirmBar={false}
+                      adjustPosition={false}
+                      onFocus={() => {
+                        activeInsertionIndexRef.current = item.index + 1
+                        keepKeyboardDocked()
+                        setEditorActive(true)
+                        requestDockCalibrationRef.current()
+                      }}
+                      onBlur={scheduleKeyboardDockReset}
+                      onInput={event => updateTaskLine(item.index, lineIndex, event.detail.value)}
+                    />
+                  </View>
+                })}
+              </View>
+            }
             if (item.kind === 'mindmap') {
               const preview = item.block.mapId ? mapPreviews[item.block.mapId] : ''
               return <View key={item.key} className='mindmap-interactive' hoverClass='mindmap-interactive--pressed' onClick={() => openMindMapBlock(item.block)}>
@@ -634,7 +685,7 @@ export default function DocumentPage() {
           <View onClick={() => setLineType('heading', 2)}>H2</View>
           <View onClick={() => setLineType('heading', 3)}>H3</View>
           <View className={formats.bold ? 'on strong' : 'strong'} onClick={() => applyFormat('bold')}>加粗</View>
-          <View className={taskListActive ? 'on' : ''} onClick={() => setLineType('taskList')}>待办</View>
+          <View onClick={insertTaskBlock}>待办</View>
           <View onClick={() => setLineType('orderedList')}>编号</View>
           <View className={formats.list === 'bullet' ? 'on' : ''} onClick={() => setLineType('bulletList')}>列表</View>
           <View onClick={() => setLineType('blockquote')}>引用</View>
@@ -650,7 +701,7 @@ export default function DocumentPage() {
           <View className='primary insert-tool' onClick={() => setInsertOpen(true)}>＋ 插入</View>
           <View className={formatOpen ? 'on' : ''} onClick={() => setFormatOpen(!formatOpen)}>格式</View>
           <View className={formats.list === 'bullet' ? 'on' : ''} onClick={() => setLineType('bulletList')}>列表</View>
-          <View className={taskListActive ? 'on' : ''} onClick={() => setLineType('taskList')}>待办</View>
+          <View onClick={insertTaskBlock}>待办</View>
           <View className={uploading ? 'disabled' : ''} onClick={chooseImage}>{uploading ? '上传中' : '图片'}</View>
           <View className={creatingMindMap ? 'disabled' : ''} onClick={insertNewMindMap}>{creatingMindMap ? '创建中' : '导图'}</View>
         </View>
@@ -690,12 +741,5 @@ export default function DocumentPage() {
       </ScrollView>
     </View>}
     {panel && <DocumentPanels document={document} mode={panel} onClose={() => setPanel(null)} onDocumentChange={hydrate} />}
-    {diagnostics !== '' && <View className='insert-mask' onClick={() => setDiagnostics('')} />}
-    {diagnostics !== '' && <View className='diagnostics-sheet'>
-      <View className='insert-sheet__head'><Text>编辑器诊断</Text><View onClick={() => setDiagnostics('')}>关闭</View></View>
-      <ScrollView className='diagnostics-body' scrollY showScrollbar={false}>
-        <Text selectable userSelect className='diagnostics-text'>{diagnostics}</Text>
-      </ScrollView>
-    </View>}
   </View>
 }
