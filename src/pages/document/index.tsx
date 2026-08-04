@@ -197,6 +197,8 @@ export default function DocumentPage() {
   const activeInsertionIndexRef = useRef(0)
   // 当前聚焦的编辑器段覆盖 blocks 的哪一片，按光标切分时需要。
   const activeSegmentRef = useRef<{ key: string; start: number; count: number } | null>(null)
+  // 标题输入框不属于正文内容区，聚焦时不应该触发内容区跟着键盘重新布局。
+  const contentFocusedRef = useRef(false)
   const previewAttemptedRef = useRef<Set<string>>(new Set())
   // boundingClientRect 返回 px，样式统一用 rpx，这里存换算比例。
   const rpxPerPxRef = useRef(750 / Math.max(1, Number(Taro.getWindowInfo().windowWidth) || 375))
@@ -400,6 +402,9 @@ export default function DocumentPage() {
       const nextHeight = Math.max(0, Number(height) || 0)
       if (nextHeight > 0) {
         clearKeyboardCloseTimer()
+        // 标题输入不属于正文内容区，别让它触发内容区跟着重新布局——
+        // 这正是标题输入法弹起又立刻收起的根因。
+        if (!contentFocusedRef.current) return
         keyboardHeightRef.current = nextHeight
         setKeyboardHeight(nextHeight)
         scheduleDockCalibration(nextHeight)
@@ -865,7 +870,7 @@ export default function DocumentPage() {
     <ScrollView className='document-scroll' scrollY enhanced enableFlex scrollAnchoring showScrollbar={false}>
       <View className='document-paper'>
         <View className='document-title-wrap'>
-          <Textarea className='document-title' autoHeight adjustPosition={false} value={title} placeholder='无标题文档' maxlength={300} showConfirmBar={false} onFocus={() => { keepKeyboardDocked(); setEditorActive(false); requestDockCalibrationRef.current() }} onBlur={scheduleKeyboardDockReset} onInput={event => setTitle(event.detail.value)} />
+          <Textarea className='document-title' autoHeight adjustPosition={false} value={title} placeholder='无标题文档' maxlength={300} showConfirmBar={false} onFocus={() => { contentFocusedRef.current = false; activeSegmentRef.current = null; keepKeyboardDocked(); setEditorActive(false) }} onBlur={scheduleKeyboardDockReset} onInput={event => setTitle(event.detail.value)} />
         </View>
         <View className='document-flow'>
           {flowItems.map((item, flowIndex) => {
@@ -894,6 +899,7 @@ export default function DocumentPage() {
                           // 插入会往上一个聚焦过的编辑器里塞标记。
                           activeSegmentRef.current = null
                           activeInsertionIndexRef.current = item.index + 1
+                          contentFocusedRef.current = true
                           keepKeyboardDocked()
                           setEditorActive(true)
                           requestDockCalibrationRef.current()
@@ -929,6 +935,7 @@ export default function DocumentPage() {
                 editorRef.current = editorRefs.current[item.key] || editorRef.current
                 activeSegmentRef.current = { key: item.key, start: item.start, count: item.count }
                 activeInsertionIndexRef.current = item.start + item.count
+                contentFocusedRef.current = true
                 keepKeyboardDocked()
                 setEditorActive(true)
                 requestDockCalibrationRef.current()
