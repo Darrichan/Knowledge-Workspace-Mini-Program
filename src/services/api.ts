@@ -161,12 +161,13 @@ export const mindMapApi = {
   deleteVersion: (documentId: string, mapId: string, versionId: string) => request<void>(`/documents/${documentId}/mind-maps/${mapId}/versions/${versionId}`, { method: 'DELETE' })
 }
 
-// 云函数单次调用的 event 有体积硬上限，超了会直接抛 "data exceed max size"。
-// 真正进 event 的是 base64 字符串，所以这里一律以 base64 长度为准，不用
-// Taro.getFileInfo —— 它对临时文件不一定可用，返回 0 会让限流逻辑静默失效。
-const CLOUD_UPLOAD_MAX_BASE64 = 700 * 1024
+// 云函数单次调用的 event 有体积硬上限，超了会抛 "data exceed max size"。
+// 这个上限的确切数值不要去猜——猜低了白白降质，猜高了照样报错。做法是：
+// 先用一个保守的预闸门挡掉明显过大的图，然后真的去调用；一旦命中体积错误，
+// 就压得更小重试。不管真实上限是多少，这个循环都会自己收敛。
+const CLOUD_UPLOAD_PREGATE_BASE64 = 320 * 1024
 // 逐级降尺寸。注意 compressImage 的 quality 只对 JPG 生效，PNG/截图只能靠缩放减重。
-const CLOUD_UPLOAD_WIDTHS = [1600, 1280, 960, 720]
+const CLOUD_UPLOAD_WIDTHS = [1440, 1080, 820, 640, 480]
 
 const readBase64 = (filePath: string) => new Promise<string>((resolve, reject) => {
   Taro.getFileSystemManager().readFile({ filePath, encoding: 'base64', success: result => resolve(String(result.data)), fail: reject })
@@ -178,33 +179,38 @@ const contentTypeOf = (path: string, fallback: string) => {
   return mimeTypes[extension] || fallback
 }
 
-/** 把图片压到云函数 event 装得下的体积，返回实际要上传的 base64 与其真实类型。 */
-async function cloudImagePayload(filePath: string, fallbackType: string) {
-  let base64 = await readBase64(filePath)
-  let contentType = contentTypeOf(filePath, fallbackType)
-  if (base64.length <= CLOUD_UPLOAD_MAX_BASE64) return { base64, contentType }
+const isSizeLimitError = (error: any) =>
+  /exceed max size|data too large|request too large/i.test(String(error?.errMsg || error?.message || ''))
+
+/** 按尺寸从大到小生成候选上传体，第一个候选是原图。 */
+async function cloudImageCandidates(filePath: string, fallbackType: string) {
+  const candidates: { base64: string; contentType: string }[] = []
+  const original = await readBase64(filePath)
+  if (original.length <= CLOUD_UPLOAD_PREGATE_BASE64) {
+    candidates.push({ base64: original, contentType: contentTypeOf(filePath, fallbackType) })
+  }
 
   let naturalWidth = 0
   try { naturalWidth = Number((await Taro.getImageInfo({ src: filePath })).width) || 0 } catch {}
 
+  let smallest = original.length
   for (const cap of CLOUD_UPLOAD_WIDTHS) {
-    // 只缩不放：放大既无意义又会变重。
-    const compressedWidth = naturalWidth ? Math.min(naturalWidth, cap) : cap
+    // 只缩不放：原图本来就比这一档窄就跳过，放大既无意义又会变重。
+    if (naturalWidth && naturalWidth <= cap) continue
     try {
-      const compressed = await Taro.compressImage({ src: filePath, compressedWidth, quality: 60 })
-      const candidate = await readBase64(compressed.tempFilePath)
-      // 保留最小的一版：某些格式下缩放反而会变大。
-      if (candidate.length < base64.length) {
-        base64 = candidate
-        contentType = contentTypeOf(compressed.tempFilePath, fallbackType)
-      }
-      if (base64.length <= CLOUD_UPLOAD_MAX_BASE64) return { base64, contentType }
+      const compressed = await Taro.compressImage({ src: filePath, compressedWidth: naturalWidth ? Math.min(naturalWidth, cap) : cap, quality: 60 })
+      const base64 = await readBase64(compressed.tempFilePath)
+      // 某些格式下缩放反而变大，这种档次直接丢掉。
+      if (base64.length >= smallest) continue
+      smallest = base64.length
+      candidates.push({ base64, contentType: contentTypeOf(compressed.tempFilePath, fallbackType) })
     } catch {
-      // 这一档压不了（PNG 常见）就继续试更小的尺寸，绝不能在这里提前退出，
-      // 否则会把未经处理的原图原样送进 callFunction。
+      // 这一档压不动（PNG 常见）就试更小的尺寸，不要提前退出。
     }
   }
-  throw new Error('图片过大，请裁剪或截图后再上传')
+  // 一档都没压成功时至少还得有东西可传。
+  if (!candidates.length) candidates.push({ base64: original, contentType: contentTypeOf(filePath, fallbackType) })
+  return candidates
 }
 
 async function uploadDocumentImage(documentId: string, filePath: string, name: string): Promise<UploadedAsset> {
@@ -213,11 +219,21 @@ async function uploadDocumentImage(documentId: string, filePath: string, name: s
   const mimeTypes: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif' }
   const contentType = mimeTypes[extension] || 'image/jpeg'
   if (API_MODE === 'cloud') {
-    const payload = await cloudImagePayload(filePath, contentType)
-    const cloudResult = await Taro.cloud.callFunction({ name: CLOUD_FUNCTION, data: { path: `/documents/${documentId}/assets`, method: 'POST', token, binaryBase64: payload.base64, contentType: payload.contentType, fileName: name } })
-    const result = cloudResult.result as { statusCode?: number; data?: UploadedAsset; error?: { message?: string } } | undefined
-    if (!result || result.statusCode !== 201 || !result.data) throw new Error((result?.data as any)?.error?.message || result?.error?.message || '图片上传失败')
-    return result.data
+    const candidates = await cloudImageCandidates(filePath, contentType)
+    let sizeError: any = null
+    for (const candidate of candidates) {
+      try {
+        const cloudResult = await Taro.cloud.callFunction({ name: CLOUD_FUNCTION, data: { path: `/documents/${documentId}/assets`, method: 'POST', token, binaryBase64: candidate.base64, contentType: candidate.contentType, fileName: name } })
+        const result = cloudResult.result as { statusCode?: number; data?: UploadedAsset; error?: { message?: string } } | undefined
+        if (!result || result.statusCode !== 201 || !result.data) throw new Error((result?.data as any)?.error?.message || result?.error?.message || '图片上传失败')
+        return result.data
+      } catch (error) {
+        // 只有体积超限才值得压小重试；其它错误（鉴权、服务端拒绝）直接抛出。
+        if (!isSizeLimitError(error)) throw error
+        sizeError = error
+      }
+    }
+    throw new Error(sizeError ? '图片过大，压缩到最小档仍超出微信云函数单次调用上限，请裁剪后再试' : '图片上传失败')
   }
   const binary = await new Promise<ArrayBuffer>((resolve, reject) => {
     Taro.getFileSystemManager().readFile({ filePath, success: result => resolve(result.data as ArrayBuffer), fail: reject })

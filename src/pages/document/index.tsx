@@ -532,19 +532,6 @@ export default function DocumentPage() {
     )
   }
 
-  const openMindMap = async () => {
-    const maps = blocksRef.current.filter(block => block.type === 'mindMapBlock' && block.mapId)
-    if (!maps.length) return Taro.showToast({ title: '当前文档还没有思维导图，请先插入', icon: 'none' })
-    let selected = maps[0]
-    if (maps.length > 1) {
-      try {
-        const result = await Taro.showActionSheet({ itemList: maps.map(block => block.title || '未命名思维导图') })
-        selected = maps[result.tapIndex] || selected
-      } catch { return }
-    }
-    openMindMapBlock(selected)
-  }
-
   const runDiagnostics = () => {
     const base: Record<string, any> = {
       SDKVersion: Taro.getSystemInfoSync().SDKVersion,
@@ -665,7 +652,7 @@ export default function DocumentPage() {
           <View className={formats.list === 'bullet' ? 'on' : ''} onClick={() => setLineType('bulletList')}>列表</View>
           <View className={taskListActive ? 'on' : ''} onClick={() => setLineType('taskList')}>待办</View>
           <View className={uploading ? 'disabled' : ''} onClick={chooseImage}>{uploading ? '上传中' : '图片'}</View>
-          <View onClick={openMindMap}>导图</View>
+          <View className={creatingMindMap ? 'disabled' : ''} onClick={insertNewMindMap}>{creatingMindMap ? '创建中' : '导图'}</View>
         </View>
       </ScrollView>}
     </View>}
