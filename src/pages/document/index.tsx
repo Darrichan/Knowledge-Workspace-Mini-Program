@@ -161,6 +161,8 @@ export default function DocumentPage() {
   const [panel, setPanel] = useState<'history' | 'share' | null>(null)
   const [keyboardHeight, setKeyboardHeight] = useState(0)
   const [dockCorrection, setDockCorrection] = useState(0)
+  // 临时诊断标题切正文的工具栏缝隙问题，定位到之后会删掉。
+  const [dockDebug, setDockDebug] = useState('')
   const keyboardCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dockCalibrationTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const keyboardHeightRef = useRef(0)
@@ -374,6 +376,9 @@ export default function DocumentPage() {
         // 真实高度算出键盘上沿，再根据实际位置迭代校正。
         const desiredTop = Math.max(0, stableHeight - height - dockHeight)
         const delta = desiredTop - currentTop
+        // 临时诊断：标题切正文仍有缝隙，光靠猜测已经改了两版都没解决，
+        // 这次把每次校准的实测数据显示出来，下一轮直接读数据而不是继续猜。
+        setDockDebug(`h=${height} sH=${stableHeight} top=${currentTop.toFixed(1)} dH=${dockHeight.toFixed(1)} want=${desiredTop.toFixed(1)} Δ=${delta.toFixed(1)} corr=${dockCorrectionRef.current.toFixed(1)}`)
         if (Math.abs(delta) < .5) return
         updateDockCorrection(dockCorrectionRef.current + delta)
       }).exec()
@@ -886,6 +891,7 @@ export default function DocumentPage() {
   })
   return <View className='document-page'>
     <Canvas id='kw-mindmap-preview-canvas' type='2d' className='mindmap-preview-canvas' />
+    {dockDebug && <View style={{ position: 'fixed', top: '4px', left: '4px', right: '4px', zIndex: 999, fontSize: '10px', color: '#fff', background: 'rgba(0,0,0,.72)', padding: '4px 6px', borderRadius: '6px' }}>{dockDebug}</View>}
     <View className='document-top'>
       <View className='document-top__type'>文</View>
       <Text className='document-top__status'>{status}</Text>
