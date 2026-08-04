@@ -902,7 +902,6 @@ export default function DocumentPage() {
                         placeholder='输入待办事项'
                         maxlength={2000}
                         showConfirmBar={false}
-                        adjustPosition={false}
                         onFocus={() => {
                           // 焦点在待办行上，不属于任何编辑器段；不清掉的话按光标
                           // 插入会往上一个聚焦过的编辑器里塞标记。
