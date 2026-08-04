@@ -573,3 +573,18 @@
   .document-editor,
   .document-editor::before { font-size: 27px; }
 }
+
+/* 屏幕外的高度镜像。宽度必须和正文栏一致，否则量出来的换行数不对。
+   仍然参与布局（不能用 display:none），只是移出可视区域。 */
+.editor-measure {
+  position: absolute;
+  z-index: -1;
+  left: -9999px;
+  top: 0;
+  width: 100%;
+  visibility: hidden;
+  pointer-events: none;
+  color: #33445a;
+  font-size: 28px;
+  line-height: 1.72;
+}

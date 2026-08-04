@@ -1,4 +1,4 @@
-import { Canvas, Editor, Image, Input, ScrollView, Text, Textarea, View } from '@tarojs/components'
+import { Canvas, Editor, Image, Input, RichText, ScrollView, Text, Textarea, View } from '@tarojs/components'
 import Taro, { useDidShow, useLoad, useRouter } from '@tarojs/taro'
 import { useEffect, useRef, useState } from 'react'
 import DocumentPanels from '../../components/DocumentPanels'
@@ -196,6 +196,11 @@ export default function DocumentPage() {
   const previewAttemptedRef = useRef<Set<string>>(new Set())
   // 已量出的图片尺寸，按图片地址缓存，避免重复 getImageInfo。
   const imageSizeRef = useRef<Record<string, { width: number; height: number }>>({})
+  // 每段编辑器的实测高度（px）。微信没有读取 editor 内容高度的接口，
+  // 这里把 onInput 给出的 html 渲染到屏幕外的镜像节点上量出来。
+  const [measuredHeights, setMeasuredHeights] = useState<Record<string, number>>({})
+  const [segmentHtml, setSegmentHtml] = useState<Record<string, string>>({})
+  const measureTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
   const getPreviewCanvas = async () => {
     if (previewCanvasRef.current) return previewCanvasRef.current
@@ -234,7 +239,7 @@ export default function DocumentPage() {
     }
   }
 
-  const loadBlocksIntoEditor = async (context: Taro.EditorContext, nextBlocks: DocumentBlock[]) => {
+  const loadBlocksIntoEditor = async (context: Taro.EditorContext, nextBlocks: DocumentBlock[], measureKey = '') => {
     settingEditorRef.current = true
     const measured: Record<string, string> = {}
     try {
@@ -253,6 +258,7 @@ export default function DocumentPage() {
         complete: () => setTimeout(() => {
           settingEditorRef.current = false
           void measureImages(measured)
+          context.getContents({ success: (result: any) => scheduleMeasure(measureKey, result?.html || '') })
         }, 80)
       })
     } catch {
@@ -435,19 +441,45 @@ export default function DocumentPage() {
     Taro.hideKeyboard()
   }
 
+  // rich-text 对 <img> 的渲染跟编辑器不一致，镜像里把图片摘掉；
+  // 图片高度另有 getImageInfo 量出的精确值，不需要靠镜像估。
+  const measurableHtml = (html: string) => String(html || '').replace(/<img[^>]*>/gi, '')
+
+  const scheduleMeasure = (key: string, html: string) => {
+    setSegmentHtml(current => current[key] === measurableHtml(html) ? current : ({ ...current, [key]: measurableHtml(html) }))
+    if (measureTimersRef.current[key]) clearTimeout(measureTimersRef.current[key])
+    measureTimersRef.current[key] = setTimeout(() => {
+      Taro.createSelectorQuery().select(`#kw-measure-${key}`).boundingClientRect(rect => {
+        const height = Math.ceil(Number((rect as any)?.height) || 0)
+        if (!height) return
+        setMeasuredHeights(current => current[key] === height ? current : ({ ...current, [key]: height }))
+      }).exec()
+    }, 120)
+  }
+
+  // 实测到高度就用实测值（再加上图片的精确高度和一点余量），否则退回估算。
+  const segmentHeightStyle = (item: { key: string; blocks: DocumentBlock[] }, isLast: boolean) => {
+    const measured = measuredHeights[item.key]
+    if (!measured) return { height: `${editorHeightRpx(item.blocks, isLast)}rpx` }
+    const imageRpx = item.blocks.reduce((total, block) => total + (block.type === 'image' ? blockHeightRpx(block) : 0), 0)
+    const slackRpx = (isLast ? 120 : 0) + 40
+    return { height: `calc(${measured}px + ${imageRpx + slackRpx}rpx)` }
+  }
+
   const editorReady = (key: string, segmentBlocks: DocumentBlock[]) => {
     Taro.createSelectorQuery().select(`#kw-document-${key}`).context(result => {
       const context = result.context as Taro.EditorContext
       if (!context) return
       editorRefs.current[key] = context
       if (!editorRef.current) editorRef.current = context
-      void loadBlocksIntoEditor(context, segmentBlocks)
+      void loadBlocksIntoEditor(context, segmentBlocks, key)
     }).exec()
   }
 
   // 一段 Editor 只负责 blocks[start, start+count) 这一片，回写时原地替换该片。
-  const onEditorInput = (start: number, count: number, event: any) => {
+  const onEditorInput = (key: string, start: number, count: number, event: any) => {
     if (settingEditorRef.current) return
+    scheduleMeasure(key, event.detail.html)
     const delta = event.detail.delta as EditorDelta
     editorTextRef.current = deltaText(delta)
     // 待办的续行与退出由原生 checklist 自己处理，这里只负责把 delta 同步成块。
@@ -813,7 +845,7 @@ export default function DocumentPage() {
               key={item.key}
               id={`kw-document-${item.key}`}
               className='document-editor document-editor--continuous'
-              style={{ height: `${editorHeightRpx(item.blocks, flowIndex === flowItems.length - 1)}rpx` }}
+              style={segmentHeightStyle(item, flowIndex === flowItems.length - 1)}
               placeholder={documentEmpty ? '输入正文…' : ''}
               showImgSize
               showImgToolbar
@@ -827,10 +859,15 @@ export default function DocumentPage() {
                 requestDockCalibrationRef.current()
               }}
               onBlur={scheduleKeyboardDockReset}
-              onInput={(event: any) => onEditorInput(item.start, item.count, event)}
+              onInput={(event: any) => onEditorInput(item.key, item.start, item.count, event)}
               onStatusChange={(event: any) => setFormats(event.detail || {})}
             />
           })}
+          {documentFlow(blocks).filter(item => item.kind === 'editor').map(item => (
+            <View key={`measure-${item.key}`} className='editor-measure' id={`kw-measure-${item.key}`}>
+              <RichText nodes={segmentHtml[item.key] || ''} />
+            </View>
+          ))}
         </View>
       </View>
       <View
