@@ -13,6 +13,9 @@ export type DocumentBlock = {
   url?: string
   src?: string
   thumbnail?: string
+  /** 图片原始像素尺寸，用于按真实比例预留编辑器高度。 */
+  imageWidth?: number
+  imageHeight?: number
   alt?: string
   mapId?: string
   title?: string
@@ -104,7 +107,11 @@ export function contentToBlocks(content?: Record<string, any>): DocumentBlock[] 
     if (node.type === 'image') {
       const originalSrc = stringValue(node.attrs?.['data-original-src'])
       const thumbnail = stringValue(node.attrs?.src)
-      return { ...base, type: 'image', src: originalSrc || thumbnail, thumbnail, alt: stringValue(node.attrs?.alt, '图片') }
+      return {
+        ...base, type: 'image', src: originalSrc || thumbnail, thumbnail, alt: stringValue(node.attrs?.alt, '图片'),
+        imageWidth: Number(node.attrs?.width) || undefined,
+        imageHeight: Number(node.attrs?.height) || undefined
+      }
     }
     if (node.type === 'mindMapBlock') return {
       ...base,
@@ -166,7 +173,7 @@ export function blocksToContent(blocks: DocumentBlock[]) {
         const lines = (block.text || '').split('\n')
         return { type: 'taskList', content: lines.map((line, index) => ({ type: 'taskItem', attrs: { checked: Boolean(block.checkedLines?.[index]) }, content: [{ type: 'paragraph', content: textContent(block, line) }] })) }
       }
-      if (block.type === 'image') return { type: 'image', attrs: { src: block.thumbnail || block.src, alt: block.alt || '图片', title: null, width: null, height: null, 'data-original-src': block.src || block.thumbnail } }
+      if (block.type === 'image') return { type: 'image', attrs: { src: block.thumbnail || block.src, alt: block.alt || '图片', title: null, width: block.imageWidth || null, height: block.imageHeight || null, 'data-original-src': block.src || block.thumbnail } }
       if (block.type === 'mindMapBlock') return { type: 'mindMapBlock', attrs: { mapId: block.mapId, title: block.title, nodeCount: block.nodeCount || 1, previewLabels: block.previewLabels || [] } }
       return { type: 'paragraph', attrs: { textAlign: null }, content: textContent(block, block.text || '', block.type === 'link') }
     })

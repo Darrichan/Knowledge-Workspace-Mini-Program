@@ -139,7 +139,8 @@
 /* 待办用自绘方框，不走微信原生 checklist —— 原生 checklist 会渲染成一个圆点，
    而页面 wxss 穿不进 <editor>，样式改不动。待办行因此渲染在 Editor 之外。 */
 .task-block {
-  margin: 12px 0 22px;
+  /* 上下留白靠相邻编辑器段自己的内边距，这里再加会叠出明显的空档。 */
+  margin: 4px 0 6px;
 }
 
 .task-row {
@@ -275,7 +276,8 @@
 }
 
 .document-bottom-space.dock-visible {
-  height: calc(148px + env(safe-area-inset-bottom));
+  /* 正文以图片结尾时也要能滚过工具栏，留出安全区。 */
+  height: calc(260px + env(safe-area-inset-bottom));
 }
 
 .floating-insert {

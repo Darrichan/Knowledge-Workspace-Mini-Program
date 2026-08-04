@@ -32,9 +32,21 @@ const wrappedLineCount = (text = '', charactersPerLine = 21) => {
 }
 
 // 微信原生 Editor 默认会形成独立滚动区。按内容预留完整高度，避免正文段
-// 与页面最外层 ScrollView 同时滚动。图片没有服务端尺寸时按文档栏宽度估算。
+// 与页面最外层 ScrollView 同时滚动。
+// 正文栏宽度：750rpx 减去 document-paper 左右各 18rpx 的内边距。
+const EDITOR_CONTENT_WIDTH_RPX = 714
+
 const blockHeightRpx = (block: DocumentBlock) => {
-  if (block.type === 'image' || block.type === 'mindMapBlock') return 620
+  if (block.type === 'image') {
+    // 图片是 width:100% 插入的，高度完全由原始比例决定。以前不管什么图都按
+    // 620rpx 预留，宽幅照片实际只占两三百，下面就空出一大块。
+    const { imageWidth, imageHeight } = block
+    if (imageWidth && imageHeight) {
+      return Math.round(Math.min(900, Math.max(180, EDITOR_CONTENT_WIDTH_RPX * (imageHeight / imageWidth)))) + 36
+    }
+    return 560
+  }
+  if (block.type === 'mindMapBlock') return 620
   if (block.type === 'horizontalRule') return 72
   const visualLines = wrappedLineCount(block.text || '', block.type === 'codeBlock' ? 18 : 21)
   if (block.type === 'heading') return Math.max(76, visualLines * 70)
@@ -44,11 +56,13 @@ const blockHeightRpx = (block: DocumentBlock) => {
   return Math.max(58, visualLines * 54)
 }
 
-const editorHeightRpx = (segmentBlocks: DocumentBlock[]) => {
+const editorHeightRpx = (segmentBlocks: DocumentBlock[], isLast = false) => {
+  // 末段多留一截，既能在图片下方点出光标继续写，也保证滚得到底。
+  const trailingSlack = isLast ? 200 : 0
   // 空段只需要一个能点进去落光标的高度。给 180 会在待办/导图下方留出大片空白。
-  if (!segmentBlocks.length) return 100
+  if (!segmentBlocks.length) return 100 + trailingSlack
   const contentHeight = segmentBlocks.reduce((total, block) => total + blockHeightRpx(block), 0)
-  return Math.max(140, contentHeight + 64)
+  return Math.max(140, contentHeight + 64) + trailingSlack
 }
 
 // \u5bfc\u56fe\u662f\u5757\u7ea7\u5361\u7247\uff0c\u5f85\u529e\u8981\u81ea\u7ed8\u590d\u9009\u6846\u2014\u2014\u4e24\u8005\u7684\u5916\u89c2\u90fd\u4e0d\u80fd\u4ea4\u7ed9\u5fae\u4fe1 Editor \u51b3\u5b9a
@@ -434,7 +448,20 @@ export default function DocumentPage() {
       let localPath = media.tempFilePath
       try { localPath = (await Taro.compressImage({ src: localPath, quality: 68 })).tempFilePath } catch {}
       const asset = await documentApi.uploadImage(documentRef.current.id, localPath, localPath.split('/').pop() || 'image.jpg')
-      imageLookupRef.current[localPath] = { src: asset.url, thumbnail: asset.thumbnail_url, alt: asset.name }
+      // 记下真实比例，正文才能按图片实际占的高度预留空间，而不是一律按最大值留白。
+      let imageWidth = Number(media.width) || 0
+      let imageHeight = Number(media.height) || 0
+      if (!imageWidth || !imageHeight) {
+        try {
+          const info = await Taro.getImageInfo({ src: localPath })
+          imageWidth = Number(info.width) || 0
+          imageHeight = Number(info.height) || 0
+        } catch {}
+      }
+      imageLookupRef.current[localPath] = {
+        src: asset.url, thumbnail: asset.thumbnail_url, alt: asset.name,
+        ...(imageWidth && imageHeight ? { imageWidth, imageHeight } : {})
+      }
       editorRef.current.insertImage({
         src: localPath,
         width: '100%',
@@ -625,6 +652,13 @@ export default function DocumentPage() {
   if (!document) return <View className='loading-screen'><View className='loading-ring' /><Text>正在打开内容</Text></View>
 
   const dockVisible = true
+  // 整篇文档为空时才显示占位提示。文档里已经有图片或待办了，末段再冒出一句
+  // 「输入正文」会让人觉得内容被割成了两截。
+  const documentEmpty = !blocks.some(block => {
+    if (block.type === 'image') return Boolean(block.src || block.thumbnail)
+    if (block.type === 'mindMapBlock' || block.type === 'horizontalRule') return true
+    return Boolean((block.text || '').trim())
+  })
   return <View className='document-page'>
     <Canvas id='kw-mindmap-preview-canvas' type='2d' className='mindmap-preview-canvas' />
     <View className='document-top'>
@@ -695,8 +729,8 @@ export default function DocumentPage() {
               key={item.key}
               id={`kw-document-${item.key}`}
               className='document-editor document-editor--continuous'
-              style={{ height: `${editorHeightRpx(item.blocks)}rpx` }}
-              placeholder={flowIndex === flowItems.length - 1 ? '输入正文…' : ''}
+              style={{ height: `${editorHeightRpx(item.blocks, flowIndex === flowItems.length - 1)}rpx` }}
+              placeholder={documentEmpty ? '输入正文…' : ''}
               showImgSize
               showImgToolbar
               showImgResize

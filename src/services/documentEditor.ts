@@ -12,6 +12,8 @@ export type EditorImageSource = {
   src: string
   thumbnail?: string
   alt?: string
+  imageWidth?: number
+  imageHeight?: number
   mapId?: string
   title?: string
   nodeCount?: number
@@ -52,7 +54,10 @@ export async function blocksToEditorDelta(
     if (block.type === 'image') {
       const localSrc = await resolveImage(block)
       if (localSrc) {
-        imageLookup[localSrc] = { src: block.src || block.thumbnail || localSrc, thumbnail: block.thumbnail, alt: block.alt }
+        imageLookup[localSrc] = {
+          src: block.src || block.thumbnail || localSrc, thumbnail: block.thumbnail, alt: block.alt,
+          imageWidth: block.imageWidth, imageHeight: block.imageHeight
+        }
         ops.push({ insert: { image: localSrc }, attributes: { alt: block.alt || '图片', 'data-local': localSrc } })
         ops.push({ insert: '\n' })
       }
@@ -167,7 +172,8 @@ export function editorDeltaToBlocks(delta: EditorDelta | undefined, imageLookup:
           type: 'image',
           src: source?.src || local,
           thumbnail: source?.thumbnail || source?.src || local,
-          alt: source?.alt || op.attributes?.alt || '图片'
+          alt: source?.alt || op.attributes?.alt || '图片',
+          ...(source?.imageWidth && source?.imageHeight ? { imageWidth: source.imageWidth, imageHeight: source.imageHeight } : {})
         })
       } else if (op.insert.divider) {
         if (lineText) flushLine()
