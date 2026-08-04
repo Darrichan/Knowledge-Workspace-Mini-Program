@@ -19,6 +19,14 @@ const INSERT_TYPES: { label: string; type: BlockType }[] = [
   { label: '引用', type: 'blockquote' }, { label: '代码块', type: 'codeBlock' },
   { label: '外链', type: 'link' }, { label: '分割线', type: 'horizontalRule' }
 ]
+// iOS 上一个页面有多个可聚焦输入框时，系统会在键盘上方自带一条「上一项/下一项/完成」
+// 导航条，这条高度不计入 onKeyboardHeightChange 上报的键盘高度——工具栏严格按键盘
+// 高度贴过去，就会跟这条系统导航条之间空出一截，看着像贴不上键盘。安卓没有这条，
+// 只在 iOS 上额外加这段缓冲。
+const IOS_KEYBOARD_ACCESSORY_HEIGHT = 44
+let cachedIsIOS = false
+try { cachedIsIOS = Taro.getDeviceInfo().platform === 'ios' } catch {}
+
 const COLORS = ['#1d2b3e', '#61728a', '#c84f58', '#d87932', '#b89116', '#358863', '#2f83aa', '#5579c2', '#7657b8', '#a94d7f']
 const COLOR_GROUPS = [
   ['#1d2b3e', '#4a586b', '#7c899b', '#b4bdc9', '#ffffff'],
@@ -376,11 +384,17 @@ export default function DocumentPage() {
       // 落在"稳定高度 - 键盘高度 - 工具栏高度"，两个式子里稳定高度和工具栏
       // 高度都会消掉，校正量直接等于 -(键盘高度 + rootTop)，不用再猜、不用
       // 再迭代收敛。
+      //
+      // 但真机截图证实：即使 rootTop=0（公式跟旧版算出同一个答案），缝隙依然
+      // 在——而且缝隙的位置正是 iOS 键盘上方那条系统自带的「上一项/下一项/
+      // 完成」导航条，它不计入 height。所以 iOS 上额外把这条的高度也算进
+      // 要留出的空间。
       Taro.createSelectorQuery().select('#kw-document-root').boundingClientRect(rootRect => {
         if (!rootRect || keyboardHeightRef.current <= 0) return
         const rootTop = Number((rootRect as any).top) || 0
-        const correction = -(height + rootTop)
-        setDockDebug(`h=${height} rootTop=${rootTop.toFixed(1)} corr=${correction.toFixed(1)} prevCorr=${dockCorrectionRef.current.toFixed(1)}`)
+        const accessoryBar = cachedIsIOS ? IOS_KEYBOARD_ACCESSORY_HEIGHT : 0
+        const correction = -(height + rootTop + accessoryBar)
+        setDockDebug(`h=${height} rootTop=${rootTop.toFixed(1)} acc=${accessoryBar} corr=${correction.toFixed(1)} prevCorr=${dockCorrectionRef.current.toFixed(1)}`)
         updateDockCorrection(correction)
       }).exec()
     }
