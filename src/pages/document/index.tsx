@@ -364,7 +364,16 @@ export default function DocumentPage() {
 
     const calibrateDock = (height: number) => {
       if (height <= 0 || keyboardHeightRef.current <= 0) return
+      // h/sH 算出来的 desiredTop 跟实测 currentTop 已经完全吻合（上一轮诊断
+      // Δ=0），但用户仍然看到缝隙——说明问题不在校正循环本身收不收敛，而在
+      // sH（挂载时测的、假设键盘弹起也不变的视口高度）这个前提是否成立。
+      // 这次额外测两个独立信号：keyboard-open 时 getWindowInfo 实时高度是否
+      // 真的还是 sH；以及页面根节点（非 fixed）的 top 有没有被一起上移，
+      // 上移了多少——两者能直接说明是 sH 假设错了还是原生位移量本身跟
+      // height 对不上。
+      const liveWindowHeight = Math.max(0, Number(Taro.getWindowInfo().windowHeight) || 0)
       Taro.createSelectorQuery().select('#kw-editor-dock').boundingClientRect(rect => {
+        Taro.createSelectorQuery().select('#kw-document-root').boundingClientRect(rootRect => {
         if (!rect || keyboardHeightRef.current <= 0) return
         const dockHeight = Math.max(0, Number(rect.height) || 0)
         const currentTop = Number(rect.top)
@@ -378,9 +387,11 @@ export default function DocumentPage() {
         const delta = desiredTop - currentTop
         // 临时诊断：标题切正文仍有缝隙，光靠猜测已经改了两版都没解决，
         // 这次把每次校准的实测数据显示出来，下一轮直接读数据而不是继续猜。
-        setDockDebug(`h=${height} sH=${stableHeight} top=${currentTop.toFixed(1)} dH=${dockHeight.toFixed(1)} want=${desiredTop.toFixed(1)} Δ=${delta.toFixed(1)} corr=${dockCorrectionRef.current.toFixed(1)}`)
+        const rootTop = rootRect ? Number((rootRect as any).top) : NaN
+        setDockDebug(`h=${height} sH=${stableHeight} liveWH=${liveWindowHeight} rootTop=${Number.isFinite(rootTop) ? rootTop.toFixed(1) : 'NA'} top=${currentTop.toFixed(1)} dH=${dockHeight.toFixed(1)} want=${desiredTop.toFixed(1)} Δ=${delta.toFixed(1)} corr=${dockCorrectionRef.current.toFixed(1)}`)
         if (Math.abs(delta) < .5) return
         updateDockCorrection(dockCorrectionRef.current + delta)
+        }).exec()
       }).exec()
     }
 
@@ -889,7 +900,7 @@ export default function DocumentPage() {
     if (block.type === 'mindMapBlock' || block.type === 'horizontalRule') return true
     return Boolean((block.text || '').trim())
   })
-  return <View className='document-page'>
+  return <View id='kw-document-root' className='document-page'>
     <Canvas id='kw-mindmap-preview-canvas' type='2d' className='mindmap-preview-canvas' />
     {dockDebug && <View style={{ position: 'fixed', top: '4px', left: '4px', right: '4px', zIndex: 999, fontSize: '10px', color: '#fff', background: 'rgba(0,0,0,.72)', padding: '4px 6px', borderRadius: '6px' }}>{dockDebug}</View>}
     <View className='document-top'>
