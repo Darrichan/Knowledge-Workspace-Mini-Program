@@ -19,14 +19,6 @@ const INSERT_TYPES: { label: string; type: BlockType }[] = [
   { label: '引用', type: 'blockquote' }, { label: '代码块', type: 'codeBlock' },
   { label: '外链', type: 'link' }, { label: '分割线', type: 'horizontalRule' }
 ]
-// iOS 上一个页面有多个可聚焦输入框时，系统会在键盘上方自带一条「上一项/下一项/完成」
-// 导航条，这条高度不计入 onKeyboardHeightChange 上报的键盘高度——工具栏严格按键盘
-// 高度贴过去，就会跟这条系统导航条之间空出一截，看着像贴不上键盘。安卓没有这条，
-// 只在 iOS 上额外加这段缓冲。
-const IOS_KEYBOARD_ACCESSORY_HEIGHT = 44
-let cachedIsIOS = false
-try { cachedIsIOS = Taro.getDeviceInfo().platform === 'ios' } catch {}
-
 const COLORS = ['#1d2b3e', '#61728a', '#c84f58', '#d87932', '#b89116', '#358863', '#2f83aa', '#5579c2', '#7657b8', '#a94d7f']
 const COLOR_GROUPS = [
   ['#1d2b3e', '#4a586b', '#7c899b', '#b4bdc9', '#ffffff'],
@@ -169,8 +161,6 @@ export default function DocumentPage() {
   const [panel, setPanel] = useState<'history' | 'share' | null>(null)
   const [keyboardHeight, setKeyboardHeight] = useState(0)
   const [dockCorrection, setDockCorrection] = useState(0)
-  // 临时诊断标题切正文的工具栏缝隙问题，定位到之后会删掉。
-  const [dockDebug, setDockDebug] = useState('')
   const keyboardCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dockCalibrationTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
   const keyboardHeightRef = useRef(0)
@@ -372,29 +362,16 @@ export default function DocumentPage() {
 
     const calibrateDock = (height: number) => {
       if (height <= 0 || keyboardHeightRef.current <= 0) return
-      // 上一版诊断证实了根因：liveWH 跟 sH 一直相等（视口高度假设没问题），
-      // 但页面根节点（fixed、id=kw-document-root）实测的上移量（rootTop）
-      // 远小于键盘高度、且随光标在文档里的位置变化——微信的 adjustPosition
-      // 默认开着，只把页面（连带 fixed 元素）挪到刚好露出光标为止，挪动量
-      // 跟键盘高度并不是一回事。旧公式假设"没挪动过"（自然位置=稳定高度-
-      // 工具栏高度），再整体减去键盘高度去凑，凑的量跟微信实际已经挪过的量
-      // 对不上，两个坐标系打架，才会一直有缝隙或不同机型/位置下表现不一致。
-      // 现在直接用实测到的 rootTop 反推：工具栏最终位置 = 未做任何校正时的
-      // 位置 + rootTop（原生位移，跟其它元素一样"被带偏"）+ 校正量，要让它
-      // 落在"稳定高度 - 键盘高度 - 工具栏高度"，两个式子里稳定高度和工具栏
-      // 高度都会消掉，校正量直接等于 -(键盘高度 + rootTop)，不用再猜、不用
-      // 再迭代收敛。
-      //
-      // 但真机截图证实：即使 rootTop=0（公式跟旧版算出同一个答案），缝隙依然
-      // 在——而且缝隙的位置正是 iOS 键盘上方那条系统自带的「上一项/下一项/
-      // 完成」导航条，它不计入 height。所以 iOS 上额外把这条的高度也算进
-      // 要留出的空间。
+      // 微信的 adjustPosition 默认开着，只把页面（连带 fixed 元素）挪到刚好
+      // 露出光标为止，挪动量跟键盘高度不是一回事，且随光标位置变化——所以
+      // 直接量 #kw-document-root 实测的位移 rootTop 来反推，而不是假设页面
+      // 没被挪动过。校正量 = -(键盘高度 + rootTop)，工具栏最终会落在
+      // "稳定高度 - 键盘高度 - 工具栏高度" 的位置（工具栏高度和稳定高度在
+      // 推导里都会消掉，不需要再量）。
       Taro.createSelectorQuery().select('#kw-document-root').boundingClientRect(rootRect => {
         if (!rootRect || keyboardHeightRef.current <= 0) return
         const rootTop = Number((rootRect as any).top) || 0
-        const accessoryBar = cachedIsIOS ? IOS_KEYBOARD_ACCESSORY_HEIGHT : 0
-        const correction = -(height + rootTop + accessoryBar)
-        setDockDebug(`h=${height} rootTop=${rootTop.toFixed(1)} acc=${accessoryBar} corr=${correction.toFixed(1)} prevCorr=${dockCorrectionRef.current.toFixed(1)}`)
+        const correction = -(height + rootTop)
         updateDockCorrection(correction)
       }).exec()
     }
@@ -906,7 +883,6 @@ export default function DocumentPage() {
   })
   return <View id='kw-document-root' className='document-page'>
     <Canvas id='kw-mindmap-preview-canvas' type='2d' className='mindmap-preview-canvas' />
-    {dockDebug && <View style={{ position: 'fixed', top: '4px', left: '4px', right: '4px', zIndex: 999, fontSize: '10px', color: '#fff', background: 'rgba(0,0,0,.72)', padding: '4px 6px', borderRadius: '6px' }}>{dockDebug}</View>}
     <View className='document-top'>
       <View className='document-top__type'>文</View>
       <Text className='document-top__status'>{status}</Text>
@@ -994,6 +970,11 @@ export default function DocumentPage() {
                 contentFocusedRef.current = true
                 keepKeyboardDocked()
                 setEditorActive(true)
+                // 标题/待办切进正文时键盘并未真正收起过，微信不会再发一次
+                // onKeyboardHeightChange 事件来补上 keyboardHeight 这个
+                // state（它控制 .editor-dock 的 .keyboard-open，清掉底部
+                // env(safe-area-inset-bottom) 的留白），这里手动同步一次。
+                if (keyboardHeightRef.current > 0) setKeyboardHeight(keyboardHeightRef.current)
                 requestDockCalibrationRef.current()
               }}
               onBlur={scheduleKeyboardDockReset}
